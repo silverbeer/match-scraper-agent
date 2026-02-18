@@ -87,8 +87,8 @@ async def scrape_matches(
     # (MT has no separate conference field — "New England" is a division in Academy)
     mt_division = config.conference if config.conference else config.division
 
-    # Store matches as dicts for submit_matches to pick up
-    ctx.deps._scraped_matches = [
+    # Accumulate matches for submit_matches to pick up
+    ctx.deps._scraped_matches += [
         {
             "home_team": m.home_team,
             "away_team": m.away_team,

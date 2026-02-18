@@ -39,21 +39,17 @@ uv sync
 playwright install chromium
 ```
 
-### 2. Verify dependencies
+### 2. Preflight check
+
+Verify all services are up before running:
 
 ```bash
-uv run match-scraper-agent check --env local
+./scripts/preflight.sh local          # Check only
+./scripts/preflight.sh local --fix    # Check + auto-start missing services
+./scripts/preflight.sh prod           # Check K3s pod status
 ```
 
-This checks that the iron-claw proxy and RabbitMQ are reachable. Expected output:
-
-```
-environment: local
-proxy: checking http://localhost:8100/status
-  status: 200
-rabbitmq: checking amqp://guest:guest@localhost:5672/
-  status: connected
-```
+Checks (local mode): Docker, env file, PostgreSQL (54322), FreeRADIUS, RabbitMQ, iron-claw proxy, Playwright, internet, and the app-level `check` command. With `--fix`, the script will auto-start FreeRADIUS, RabbitMQ, and the iron-claw proxy if they're not running.
 
 ### 3. Dry run (no mutations)
 
