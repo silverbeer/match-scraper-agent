@@ -1,0 +1,175 @@
+"""Typer CLI for match-scraper-agent."""
+
+from __future__ import annotations
+
+import uuid
+from typing import Annotated
+
+import structlog
+import typer
+
+app = typer.Typer(name="match-scraper-agent", no_args_is_help=True)
+logger = structlog.get_logger()
+
+
+def _classify_error(exc: Exception, proxy_url: str) -> tuple[str, bool]:
+    """Return a one-line diagnostic and whether the error is known.
+
+    Returns:
+        (message, known) — known=True means the diagnostic is sufficient,
+        no traceback needed.
+    """
+    import httpx
+    from anthropic import APIConnectionError, APIStatusError, AuthenticationError
+
+    # Walk the full cause chain once
+    chain: BaseException | None = exc
+    while chain is not None:
+        if isinstance(chain, (httpx.ConnectError, APIConnectionError)):
+            return (
+                f"Cannot reach proxy at {proxy_url} — is the iron-claw proxy running?",
+                True,
+            )
+        if isinstance(chain, AuthenticationError):
+            return (
+                "Authentication failed — check AGENT_ANTHROPIC_API_KEY or proxy auth config",
+                True,
+            )
+        if isinstance(chain, APIStatusError):
+            return f"API error {chain.status_code}: {chain.message}", True
+        chain = getattr(chain, "__cause__", None)
+
+    # Truly unexpected — caller should log the traceback
+    return str(exc), False
+
+
+@app.command()
+def run(
+    env: Annotated[str, typer.Option("--env", help="Environment name (local, prod)")] = "local",
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Skip mutating operations")] = False,
+    json_logs: Annotated[bool, typer.Option("--json-logs", help="Output JSON log lines")] = False,
+    model: Annotated[str | None, typer.Option("--model", help="Override model name")] = None,
+    proxy_url: Annotated[
+        str | None, typer.Option("--proxy-url", help="Override proxy base URL")
+    ] = None,
+) -> None:
+    """Run the match-scraper agent."""
+    from src.celery.queue_client import MatchQueueClient
+
+    from agent.core import create_agent
+    from agent.deps import AgentDeps
+    from config.settings import AgentSettings, env_file_path
+    from utils.logger import configure_logging
+
+    settings = AgentSettings(_env_file=env_file_path(env))
+    if model:
+        settings.model_name = model
+    if proxy_url:
+        settings.proxy_base_url = proxy_url
+    if dry_run:
+        settings.dry_run = True
+
+    configure_logging(json_output=json_logs or settings.json_logs, log_level=settings.log_level)
+
+    # Bind run_id and env to all log lines for this invocation
+    run_id = uuid.uuid4().hex[:12]
+    structlog.contextvars.bind_contextvars(run_id=run_id, env=env)
+
+    logger.info(
+        "agent.starting",
+        model=settings.model_name,
+        proxy=settings.proxy_base_url,
+        dry_run=settings.dry_run,
+    )
+
+    try:
+        agent = create_agent(settings)
+        queue_client = MatchQueueClient(
+            broker_url=settings.rabbitmq_url,
+            exchange_name=settings.exchange_name,
+        )
+        deps = AgentDeps(
+            queue_client=queue_client,
+            settings=settings,
+            dry_run=settings.dry_run,
+        )
+
+        result = agent.run_sync("Review today's matches and take appropriate actions.", deps=deps)
+    except Exception as exc:
+        message, known = _classify_error(exc, settings.proxy_base_url)
+        logger.error("agent.failed", error=message)
+        if not known:
+            logger.error("agent.failed.trace", exc_info=exc)
+        raise typer.Exit(code=1) from None
+
+    logger.info(
+        "agent.completed",
+        summary=result.output.summary,
+        actions=len(result.output.actions),
+        matches_found=result.output.matches_found,
+        matches_submitted=result.output.matches_submitted,
+        requests=result.usage().requests,
+        tokens=result.usage().total_tokens,
+    )
+
+    if json_logs or settings.json_logs:
+        print(result.output.model_dump_json(indent=2))
+    else:
+        typer.echo(f"\n{result.output.summary}")
+        for action in result.output.actions:
+            prefix = "[DRY RUN] " if action.dry_run else ""
+            typer.echo(f"  {prefix}{action.action}: {action.detail}")
+
+    structlog.contextvars.unbind_contextvars("run_id", "env")
+
+
+@app.command()
+def check(
+    env: Annotated[str, typer.Option("--env", help="Environment name (local, prod)")] = "local",
+    proxy_url: Annotated[
+        str | None, typer.Option("--proxy-url", help="Override proxy base URL")
+    ] = None,
+) -> None:
+    """Check proxy health and RabbitMQ connectivity."""
+    import httpx
+
+    from config.settings import AgentSettings, env_file_path
+    from utils.logger import configure_logging
+
+    configure_logging(json_output=False)
+
+    settings = AgentSettings(_env_file=env_file_path(env))
+    if proxy_url:
+        settings.proxy_base_url = proxy_url
+
+    typer.echo(f"environment: {env}")
+
+    # Check proxy
+    base = settings.proxy_base_url.rstrip("/")
+    status_url = base.replace("/v1", "") + "/status"
+    typer.echo(f"proxy: checking {status_url}")
+    try:
+        resp = httpx.get(status_url, timeout=5)
+        typer.echo(f"  status: {resp.status_code}")
+        if resp.status_code == 200:
+            typer.echo(f"  response: {resp.text[:200]}")
+    except httpx.ConnectError:
+        typer.echo("  status: UNREACHABLE")
+    except httpx.TimeoutException:
+        typer.echo("  status: TIMEOUT")
+
+    # Check RabbitMQ
+    typer.echo(f"rabbitmq: checking {settings.rabbitmq_url}")
+    try:
+        from src.celery.queue_client import MatchQueueClient
+
+        client = MatchQueueClient(
+            broker_url=settings.rabbitmq_url,
+            exchange_name=settings.exchange_name,
+        )
+        if client.check_connection():
+            typer.echo("  status: connected")
+        else:
+            typer.echo("  status: UNREACHABLE")
+    except Exception as exc:
+        typer.echo(f"  status: ERROR ({exc})")
