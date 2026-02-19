@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: match-scraper-agent
+  namespace: match-scraper
+spec:
+  schedule: "0 14 * * *"  # Daily at 14:00 UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 600
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: agent
+              image: ghcr.io/silverbeer/match-scraper-agent:latest
+              args: ["run", "--env", "prod"]
+              envFrom:
+                - configMapRef:
+                    name: match-scraper-agent-config
+                - secretRef:
+                    name: match-scraper-agent-secret
+              resources:
+                requests:
+                  cpu: 200m
+                  memory: 512Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
