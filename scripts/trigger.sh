@@ -182,11 +182,20 @@ if [[ "$ENV" == "local" ]]; then
             printf "  ${GREEN}PASS${RESET}  %d new log line(s) from worker\n\n" "$NEW_LINES"
 
             # Extract task results from new worker output
-            CREATED=$(tail -n "$NEW_LINES" "$WORKER_LOG" | grep -c '"status": "created"' 2>/dev/null || echo "0")
-            UPDATED=$(tail -n "$NEW_LINES" "$WORKER_LOG" | grep -c '"status": "updated"' 2>/dev/null || echo "0")
-            SKIPPED=$(tail -n "$NEW_LINES" "$WORKER_LOG" | grep -c '"status": "skipped"' 2>/dev/null || echo "0")
-            ERRORS=$(tail -n "$NEW_LINES" "$WORKER_LOG" | grep -ci 'error\|traceback\|failed' 2>/dev/null || echo "0")
-            SUCCEEDED=$(tail -n "$NEW_LINES" "$WORKER_LOG" | grep -c 'Task .* succeeded' 2>/dev/null || echo "0")
+            # Cache new worker lines to a temp file to avoid repeated tail on large logs
+            WORKER_TAIL=$(mktemp)
+            tail -n "$NEW_LINES" "$WORKER_LOG" > "$WORKER_TAIL" 2>/dev/null
+
+            CREATED=$(grep -c '"status": "created"' "$WORKER_TAIL" 2>/dev/null || true)
+            CREATED="${CREATED:-0}"; CREATED="${CREATED//[^0-9]/}"
+            UPDATED=$(grep -c '"status": "updated"' "$WORKER_TAIL" 2>/dev/null || true)
+            UPDATED="${UPDATED:-0}"; UPDATED="${UPDATED//[^0-9]/}"
+            SKIPPED=$(grep -c '"status": "skipped"' "$WORKER_TAIL" 2>/dev/null || true)
+            SKIPPED="${SKIPPED:-0}"; SKIPPED="${SKIPPED//[^0-9]/}"
+            ERRORS=$(grep -ci 'error\|traceback\|failed' "$WORKER_TAIL" 2>/dev/null || true)
+            ERRORS="${ERRORS:-0}"; ERRORS="${ERRORS//[^0-9]/}"
+            SUCCEEDED=$(grep -c 'Task .* succeeded' "$WORKER_TAIL" 2>/dev/null || true)
+            SUCCEEDED="${SUCCEEDED:-0}"; SUCCEEDED="${SUCCEEDED//[^0-9]/}"
 
             if [[ $((CREATED + UPDATED + SKIPPED + SUCCEEDED)) -gt 0 ]]; then
                 printf "  ${BOLD}Task results:${RESET}\n"
@@ -199,7 +208,9 @@ if [[ "$ENV" == "local" ]]; then
 
             # Show last few task results
             printf "\n  ${BOLD}Recent worker output:${RESET}\n"
-            tail -n "$NEW_LINES" "$WORKER_LOG" | grep -E 'succeeded|ERROR|processed match' | tail -10 | sed 's/^/    /'
+            grep -E 'succeeded|ERROR|processed match' "$WORKER_TAIL" | tail -10 | sed 's/^/    /'
+
+            rm -f "$WORKER_TAIL"
         else
             printf "  ${YELLOW}WARN${RESET}  No new worker log output\n"
             printf "  ${CYAN}INFO${RESET}  Worker may not have received tasks — check: tail %s\n" "$WORKER_LOG"
