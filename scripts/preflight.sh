@@ -190,7 +190,47 @@ if [[ "$ENV" == "local" ]]; then
         fi
     fi
 
-    # 6. Celery worker (consumers on RabbitMQ)
+    # 6. RabbitMQ routing (matches-fanout → match_processing)
+    section "RabbitMQ routing"
+    if port_listening 5672; then
+        EXCHANGE_EXISTS=$(command docker exec rabbitmq rabbitmqctl list_exchanges name -q 2>/dev/null | grep -c "^matches-fanout$" || echo "0")
+        if [[ "$EXCHANGE_EXISTS" -gt 0 ]]; then
+            BINDING_EXISTS=$(command docker exec rabbitmq rabbitmqctl list_bindings source_name destination_name -q 2>/dev/null | grep -c "matches-fanout" || echo "0")
+            if [[ "$BINDING_EXISTS" -gt 0 ]]; then
+                pass "matches-fanout exchange bound to match_processing queue"
+            else
+                fail "matches-fanout exchange exists but has no bindings"
+                if [[ "$FIX" == true ]]; then
+                    info "Binding matches-fanout → match_processing..."
+                    command docker exec rabbitmq rabbitmqadmin -u admin -p admin123 \
+                        declare binding source=matches-fanout destination=match_processing 2>&1 | sed 's/^/       /'
+                    ((FAIL_COUNT--))
+                    pass "Binding created"
+                else
+                    info "Fix: docker exec rabbitmq rabbitmqadmin -u admin -p admin123 declare binding source=matches-fanout destination=match_processing"
+                    info "Or run with --fix to auto-create"
+                fi
+            fi
+        else
+            fail "matches-fanout exchange does not exist"
+            if [[ "$FIX" == true ]]; then
+                info "Creating exchange and binding..."
+                command docker exec rabbitmq rabbitmqadmin -u admin -p admin123 \
+                    declare exchange name=matches-fanout type=fanout durable=true 2>&1 | sed 's/^/       /'
+                command docker exec rabbitmq rabbitmqadmin -u admin -p admin123 \
+                    declare binding source=matches-fanout destination=match_processing 2>&1 | sed 's/^/       /'
+                ((FAIL_COUNT--))
+                pass "Exchange + binding created"
+            else
+                info "Fix: docker exec rabbitmq rabbitmqadmin -u admin -p admin123 declare exchange name=matches-fanout type=fanout durable=true"
+                info "Or run with --fix to auto-create"
+            fi
+        fi
+    else
+        info "Skipped — RabbitMQ not running"
+    fi
+
+    # 7. Celery worker (consumers on RabbitMQ)
     MISSING_TABLE_DIR="$HOME/gitrepos/missing-table/backend"
     WORKER_LOG="/tmp/celery-worker.log"
     WORKER_PID_FILE="/tmp/celery-worker.pid"
@@ -240,7 +280,7 @@ if [[ "$ENV" == "local" ]]; then
         info "Skipped — RabbitMQ not running"
     fi
 
-    # 7. iron-claw proxy (port 8100)
+    # 8. iron-claw proxy (port 8100)
     section "iron-claw proxy (port 8100)"
     if curl -sf --connect-timeout 3 http://localhost:8100/health >/dev/null 2>&1; then
         pass "Proxy responding at http://localhost:8100/health"
@@ -271,7 +311,7 @@ if [[ "$ENV" == "local" ]]; then
         fi
     fi
 
-    # 8. Playwright / Chromium
+    # 9. Playwright / Chromium
     section "Playwright / Chromium"
     if uv run python -c "from playwright.sync_api import sync_playwright" 2>/dev/null; then
         pass "Playwright importable"
@@ -280,7 +320,7 @@ if [[ "$ENV" == "local" ]]; then
         info "Install: playwright install chromium"
     fi
 
-    # 9. Internet (MLS Next)
+    # 10. Internet (MLS Next)
     section "Internet (MLS Next)"
     if curl -sf --connect-timeout 5 -o /dev/null https://www.mlssoccer.com; then
         pass "mlssoccer.com reachable"
@@ -289,7 +329,7 @@ if [[ "$ENV" == "local" ]]; then
         info "Check internet connection"
     fi
 
-    # 10. App-level check
+    # 11. App-level check
     section "App-level check"
     if [[ $FAIL_COUNT -eq 0 ]]; then
         info "Running: uv run match-scraper-agent check --env local"
