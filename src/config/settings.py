@@ -53,3 +53,10 @@ class AgentSettings(BaseSettings):
     dry_run: bool = False
     json_logs: bool = False
     log_level: str = "info"
+
+    # Database (missing-table Supabase — used by trigger.sh post-run verification)
+    db_host: str = "127.0.0.1"
+    db_port: int = 54332
+    db_user: str = "postgres"
+    db_password: str = "postgres"
+    db_name: str = "postgres"
