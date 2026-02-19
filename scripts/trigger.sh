@@ -14,7 +14,6 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 NAMESPACE="match-scraper"
 CRONJOB_NAME="match-scraper-agent"
 WORKER_LOG="/tmp/celery-worker.log"
-DB_PORT=54332
 
 # ── Colors ─────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -72,6 +71,15 @@ while [[ $# -gt 0 ]]; do
     esac
     shift
 done
+
+# ── Load env file ──────────────────────────────────────────────────────
+ENV_FILE="$REPO_DIR/envs/.env.${ENV}"
+if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "$ENV_FILE"
+    set +a
+fi
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # LOCAL MODE
@@ -202,11 +210,17 @@ if [[ "$ENV" == "local" ]]; then
 
     # 3. Database check — count recent matches from agent source
     printf "\n${BOLD}Database (matches table)${RESET}\n"
-    export PGPASSWORD="postgres"
+    DB_HOST="${AGENT_DB_HOST:-127.0.0.1}"
+    DB_PORT="${AGENT_DB_PORT:-54332}"
+    DB_USER="${AGENT_DB_USER:-postgres}"
+    DB_NAME="${AGENT_DB_NAME:-postgres}"
+    export PGPASSWORD="${AGENT_DB_PASSWORD:-postgres}"
+    PSQL_OPTS=(-h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -w -t -A)
+
     if command -v psql >/dev/null 2>&1; then
-        MATCH_COUNT=$(psql -h 127.0.0.1 -p "$DB_PORT" -U postgres -d postgres -w -t -A -c \
+        MATCH_COUNT=$(psql "${PSQL_OPTS[@]}" -c \
             "SELECT count(*) FROM matches WHERE source = 'match-scraper-agent';" 2>/dev/null || echo "")
-        RECENT_COUNT=$(psql -h 127.0.0.1 -p "$DB_PORT" -U postgres -d postgres -w -t -A -c \
+        RECENT_COUNT=$(psql "${PSQL_OPTS[@]}" -c \
             "SELECT count(*) FROM matches WHERE source = 'match-scraper-agent' AND created_at > now() - interval '5 minutes';" 2>/dev/null || echo "")
 
         if [[ -n "$MATCH_COUNT" ]]; then
@@ -216,7 +230,7 @@ if [[ "$ENV" == "local" ]]; then
 
                 # Show a sample of recent matches
                 printf "\n  ${BOLD}Recent matches:${RESET}\n"
-                psql -h 127.0.0.1 -p "$DB_PORT" -U postgres -d postgres -w -t -A -F '|' -c \
+                psql "${PSQL_OPTS[@]}" -F '|' -c \
                     "SELECT m.match_date, ht.name, at.name, m.match_status
                      FROM matches m
                      JOIN teams ht ON m.home_team_id = ht.id
