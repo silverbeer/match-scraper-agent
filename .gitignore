@@ -11,3 +11,5 @@ build/
 .pytest_cache/
 .coverage
 htmlcov/
+# K8s secrets (use secret.yaml.example as template)
+k3s/**/secret.yaml
