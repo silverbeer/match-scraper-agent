@@ -129,8 +129,9 @@ if [[ "$ENV" == "local" ]]; then
     else
         TOTAL_MESSAGES=0
         while IFS=$'\t' read -r QNAME QCOUNT _REST; do
-            QCOUNT="${QCOUNT:-0}"
             [[ -z "$QNAME" ]] && continue
+            # Skip header row and non-numeric counts
+            [[ ! "$QCOUNT" =~ ^[0-9]+$ ]] && continue
             TOTAL_MESSAGES=$((TOTAL_MESSAGES + QCOUNT))
             if [[ "$QCOUNT" -eq 0 ]]; then
                 printf "  ${GREEN}PASS${RESET}  %s: %d messages (drained)\n" "$QNAME" "$QCOUNT"
@@ -147,8 +148,8 @@ if [[ "$ENV" == "local" ]]; then
                 ((elapsed += 2))
                 REMAINING=0
                 while IFS=$'\t' read -r QNAME QCOUNT _REST; do
-                    QCOUNT="${QCOUNT:-0}"
                     [[ -z "$QNAME" ]] && continue
+                    [[ ! "$QCOUNT" =~ ^[0-9]+$ ]] && continue
                     REMAINING=$((REMAINING + QCOUNT))
                 done <<< "$(command docker exec rabbitmq rabbitmqctl list_queues name messages -q 2>/dev/null || echo "")"
                 if [[ $REMAINING -eq 0 ]]; then
