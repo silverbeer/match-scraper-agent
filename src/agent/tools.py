@@ -11,6 +11,23 @@ from agent.deps import AgentDeps
 
 logger = structlog.get_logger()
 
+# MLS Next full names → missing-table DB names
+TEAM_NAME_MAP: dict[str, str] = {
+    "Intercontinental Football Academy of New England": "IFA",
+}
+
+# Academy league overrides (same MLS Next name, different DB team)
+ACADEMY_TEAM_NAME_MAP: dict[str, str] = {
+    "Intercontinental Football Academy of New England": "IFA Academy",
+}
+
+
+def _normalize_team_name(name: str, *, league: str = "") -> str:
+    """Map MLS Next display names to missing-table canonical names."""
+    if league == "Academy":
+        return ACADEMY_TEAM_NAME_MAP.get(name, TEAM_NAME_MAP.get(name, name))
+    return TEAM_NAME_MAP.get(name, name)
+
 
 def get_today_info(ctx: RunContext[AgentDeps]) -> str:
     """Get today's date information to help decide what actions to take.
@@ -26,6 +43,11 @@ def get_today_info(ctx: RunContext[AgentDeps]) -> str:
         f"Week: {now.isocalendar().week}\n"
         f"Time (UTC): {now.strftime('%H:%M')}"
     )
+
+
+# Season end date — enforced as a floor for end_date so the LLM can't
+# accidentally use a shorter range than the full remaining season.
+SEASON_END = date(2026, 5, 10)
 
 
 async def scrape_matches(
@@ -44,7 +66,7 @@ async def scrape_matches(
 
     Args:
         start_date: Start date (ISO 8601, e.g. "2026-02-18").
-        end_date: End date (ISO 8601, e.g. "2026-02-25").
+        end_date: End date (ISO 8601, e.g. "2026-05-10").
         age_group: Age group to scrape (e.g. "U14"). Defaults to agent config.
         league: League type ("Homegrown" or "Academy"). Defaults to agent config.
         division: Division filter for Homegrown (e.g. "Northeast"). Defaults to agent config.
@@ -56,6 +78,16 @@ async def scrape_matches(
     settings = ctx.deps.settings
     parsed_start = date.fromisoformat(start_date)
     parsed_end = date.fromisoformat(end_date)
+
+    # Guarantee the end date covers the full season regardless of what the LLM passes
+    if parsed_end < SEASON_END:
+        logger.info(
+            "tool.scrape_matches.extend_end_date",
+            requested=end_date,
+            enforced=SEASON_END.isoformat(),
+        )
+        parsed_end = SEASON_END
+
     look_back = (parsed_end - parsed_start).days
 
     config = ScrapingConfig(
@@ -87,11 +119,11 @@ async def scrape_matches(
     # (MT has no separate conference field — "New England" is a division in Academy)
     mt_division = config.conference if config.conference else config.division
 
-    # Store matches as dicts for submit_matches to pick up
-    ctx.deps._scraped_matches = [
+    # Accumulate matches for submit_matches to pick up
+    built = [
         {
-            "home_team": m.home_team,
-            "away_team": m.away_team,
+            "home_team": _normalize_team_name(m.home_team, league=config.league),
+            "away_team": _normalize_team_name(m.away_team, league=config.league),
             "match_date": m.match_datetime.date().isoformat(),
             "season": _current_season(),
             "age_group": config.age_group,
@@ -107,6 +139,18 @@ async def scrape_matches(
         }
         for m in matches
     ]
+
+    # Apply team filter if set (e.g. --target u14-hg-ifa)
+    team_filter = ctx.deps.team_filter
+    if team_filter:
+        before = len(built)
+        built = [
+            m for m in built
+            if team_filter in (m["home_team"], m["away_team"])
+        ]
+        logger.info("tool.scrape_matches.team_filter", team=team_filter, before=before, after=len(built))
+
+    ctx.deps._scraped_matches += built
 
     if not matches:
         target = f"{config.age_group} {config.league}"
