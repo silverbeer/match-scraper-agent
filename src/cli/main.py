@@ -43,6 +43,41 @@ def _classify_error(exc: Exception, proxy_url: str) -> tuple[str, bool]:
     return str(exc), False
 
 
+_TARGET_PROMPTS: dict[str, str] = {
+    "u14-hg": (
+        "Only scrape U14 Homegrown Northeast today. "
+        "Do not scrape other targets."
+    ),
+    "u14-hg-ifa": (
+        "Only scrape U14 Homegrown Northeast today. "
+        "Only IFA matches will be submitted. Do not scrape other targets."
+    ),
+    "u13-hg": (
+        "Only scrape U13 Homegrown Northeast today. "
+        "Do not scrape other targets."
+    ),
+    "u13-hg-ifa": (
+        "Only scrape U13 Homegrown Northeast today. "
+        "Only IFA matches will be submitted. Do not scrape other targets."
+    ),
+    "u14-academy": (
+        "Only scrape U14 Academy New England (conference='New England') today. "
+        "Do not scrape other targets."
+    ),
+    "u14-academy-ifa": (
+        "Only scrape U14 Academy New England (conference='New England') today. "
+        "Only IFA Academy matches will be submitted. Do not scrape other targets."
+    ),
+}
+
+# Targets that include a team filter — value is the DB team name used for filtering
+_TARGET_TEAM_FILTER: dict[str, str] = {
+    "u14-hg-ifa": "IFA",
+    "u13-hg-ifa": "IFA",
+    "u14-academy-ifa": "IFA Academy",
+}
+
+
 @app.command()
 def run(
     env: Annotated[str, typer.Option("--env", help="Environment name (local, prod)")] = "local",
@@ -51,6 +86,10 @@ def run(
     model: Annotated[str | None, typer.Option("--model", help="Override model name")] = None,
     proxy_url: Annotated[
         str | None, typer.Option("--proxy-url", help="Override proxy base URL")
+    ] = None,
+    target: Annotated[
+        str | None,
+        typer.Option("--target", help="Scrape only this target (u14-hg, u13-hg, u14-academy)"),
     ] = None,
 ) -> None:
     """Run the match-scraper agent."""
@@ -88,13 +127,26 @@ def run(
             broker_url=settings.rabbitmq_url,
             exchange_name=settings.exchange_name,
         )
+        if target and target not in _TARGET_PROMPTS:
+            valid = ", ".join(sorted(_TARGET_PROMPTS))
+            typer.echo(f"Unknown target '{target}'. Valid targets: {valid}", err=True)
+            raise typer.Exit(code=1)
+
+        team_filter = _TARGET_TEAM_FILTER.get(target or "", "")
         deps = AgentDeps(
             queue_client=queue_client,
             settings=settings,
             dry_run=settings.dry_run,
+            team_filter=team_filter,
         )
 
-        result = agent.run_sync("Review today's matches and take appropriate actions.", deps=deps)
+        if target:
+            user_prompt = _TARGET_PROMPTS[target]
+            logger.info("agent.target_filter", target=target, team_filter=team_filter or None)
+        else:
+            user_prompt = "Review today's matches and take appropriate actions."
+
+        result = agent.run_sync(user_prompt, deps=deps)
     except Exception as exc:
         message, known = _classify_error(exc, settings.proxy_base_url)
         logger.error("agent.failed", error=message)

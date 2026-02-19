@@ -31,18 +31,28 @@ Usage: ./scripts/trigger.sh <env> [options]
   env:        local | prod
 
 Local options:
-  --dry-run   Skip mutating operations (no queue submissions)
-  --model X   Override model name
+  --dry-run       Skip mutating operations (no queue submissions)
+  --model X       Override model name
+  --target NAME   Scrape only this target:
+                    u14-hg           U14 Homegrown Northeast (all teams)
+                    u14-hg-ifa       U14 Homegrown Northeast (IFA only)
+                    u13-hg           U13 Homegrown Northeast (all teams)
+                    u13-hg-ifa       U13 Homegrown Northeast (IFA only)
+                    u14-academy      U14 Academy New England (all teams)
+                    u14-academy-ifa  U14 Academy New England (IFA only)
 
 Prod options:
   --follow    Tail pod logs after creating the Job
   --dry-run   Pass --dry-run to the agent container
 
 Examples:
-  ./scripts/trigger.sh local              # Run agent locally
-  ./scripts/trigger.sh local --dry-run    # Local dry run
-  ./scripts/trigger.sh prod               # Create K3s Job
-  ./scripts/trigger.sh prod --follow      # Create Job + tail logs
+  ./scripts/trigger.sh local                            # Run agent (all targets)
+  ./scripts/trigger.sh local --target u14-hg-ifa       # Only U14 HG IFA matches
+  ./scripts/trigger.sh local --target u14-academy-ifa  # Only U14 Academy IFA matches
+  ./scripts/trigger.sh local --target u14-hg           # All U14 HG Northeast teams
+  ./scripts/trigger.sh local --dry-run                 # Local dry run
+  ./scripts/trigger.sh prod                            # Create K3s Job
+  ./scripts/trigger.sh prod --follow                   # Create Job + tail logs
 USAGE
     exit 1
 }
@@ -61,12 +71,14 @@ fi
 DRY_RUN=false
 FOLLOW=false
 MODEL=""
+TARGET=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --dry-run) DRY_RUN=true ;;
         --follow)  FOLLOW=true ;;
         --model)   MODEL="$2"; shift ;;
+        --target)  TARGET="$2"; shift ;;
         *)         echo "Unknown option: $1" >&2; usage ;;
     esac
     shift
@@ -105,6 +117,7 @@ if [[ "$ENV" == "local" ]]; then
     CMD=(uv run match-scraper-agent run --env local)
     [[ "$DRY_RUN" == true ]] && CMD+=(--dry-run)
     [[ -n "$MODEL" ]] && CMD+=(--model "$MODEL")
+    [[ -n "$TARGET" ]] && CMD+=(--target "$TARGET")
 
     printf "\n${BOLD}Triggering agent...${RESET}\n"
     printf "  ${DIM}%s${RESET}\n\n" "${CMD[*]}"
