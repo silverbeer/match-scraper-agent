@@ -14,7 +14,7 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 NAMESPACE="match-scraper"
 CRONJOB_NAME="match-scraper-agent"
 WORKER_LOG="/tmp/celery-worker.log"
-DB_PORT=54322
+DB_PORT=54332
 
 # ── Colors ─────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -202,10 +202,11 @@ if [[ "$ENV" == "local" ]]; then
 
     # 3. Database check — count recent matches from agent source
     printf "\n${BOLD}Database (matches table)${RESET}\n"
+    export PGPASSWORD="postgres"
     if command -v psql >/dev/null 2>&1; then
-        MATCH_COUNT=$(psql -h 127.0.0.1 -p "$DB_PORT" -U postgres -d postgres -t -A -c \
+        MATCH_COUNT=$(psql -h 127.0.0.1 -p "$DB_PORT" -U postgres -d postgres -w -t -A -c \
             "SELECT count(*) FROM matches WHERE source = 'match-scraper-agent';" 2>/dev/null || echo "")
-        RECENT_COUNT=$(psql -h 127.0.0.1 -p "$DB_PORT" -U postgres -d postgres -t -A -c \
+        RECENT_COUNT=$(psql -h 127.0.0.1 -p "$DB_PORT" -U postgres -d postgres -w -t -A -c \
             "SELECT count(*) FROM matches WHERE source = 'match-scraper-agent' AND created_at > now() - interval '5 minutes';" 2>/dev/null || echo "")
 
         if [[ -n "$MATCH_COUNT" ]]; then
@@ -215,7 +216,7 @@ if [[ "$ENV" == "local" ]]; then
 
                 # Show a sample of recent matches
                 printf "\n  ${BOLD}Recent matches:${RESET}\n"
-                psql -h 127.0.0.1 -p "$DB_PORT" -U postgres -d postgres -t -A -F '|' -c \
+                psql -h 127.0.0.1 -p "$DB_PORT" -U postgres -d postgres -w -t -A -F '|' -c \
                     "SELECT m.match_date, ht.name, at.name, m.match_status
                      FROM matches m
                      JOIN teams ht ON m.home_team_id = ht.id
