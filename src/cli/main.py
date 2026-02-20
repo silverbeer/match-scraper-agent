@@ -47,18 +47,12 @@ def _classify_error(exc: Exception, proxy_url: str) -> tuple[str, bool]:
 
 
 _TARGET_PROMPTS: dict[str, str] = {
-    "u14-hg": (
-        "Only scrape U14 Homegrown Northeast today. "
-        "Do not scrape other targets."
-    ),
+    "u14-hg": ("Only scrape U14 Homegrown Northeast today. Do not scrape other targets."),
     "u14-hg-ifa": (
         "Only scrape U14 Homegrown Northeast today. "
         "Only IFA matches will be submitted. Do not scrape other targets."
     ),
-    "u13-hg": (
-        "Only scrape U13 Homegrown Northeast today. "
-        "Do not scrape other targets."
-    ),
+    "u13-hg": ("Only scrape U13 Homegrown Northeast today. Do not scrape other targets."),
     "u13-hg-ifa": (
         "Only scrape U13 Homegrown Northeast today. "
         "Only IFA matches will be submitted. Do not scrape other targets."
