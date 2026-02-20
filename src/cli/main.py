@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import structlog
 import typer
+
+if TYPE_CHECKING:
+    from config.settings import AgentSettings
 
 app = typer.Typer(name="match-scraper-agent", no_args_is_help=True)
 logger = structlog.get_logger()
@@ -44,18 +47,12 @@ def _classify_error(exc: Exception, proxy_url: str) -> tuple[str, bool]:
 
 
 _TARGET_PROMPTS: dict[str, str] = {
-    "u14-hg": (
-        "Only scrape U14 Homegrown Northeast today. "
-        "Do not scrape other targets."
-    ),
+    "u14-hg": ("Only scrape U14 Homegrown Northeast today. Do not scrape other targets."),
     "u14-hg-ifa": (
         "Only scrape U14 Homegrown Northeast today. "
         "Only IFA matches will be submitted. Do not scrape other targets."
     ),
-    "u13-hg": (
-        "Only scrape U13 Homegrown Northeast today. "
-        "Do not scrape other targets."
-    ),
+    "u13-hg": ("Only scrape U13 Homegrown Northeast today. Do not scrape other targets."),
     "u13-hg-ifa": (
         "Only scrape U13 Homegrown Northeast today. "
         "Only IFA matches will be submitted. Do not scrape other targets."
@@ -78,6 +75,75 @@ _TARGET_TEAM_FILTER: dict[str, str] = {
 }
 
 
+def _proxy_preflight(settings: AgentSettings) -> str:
+    """Check iron-claw proxy status and return the model to use.
+
+    Hits GET /status on the proxy. If RADIUS is active, validates the token
+    budget and returns the model allowed by the RADIUS session. If bare mode
+    (no RADIUS), returns the configured model. Exits on unreachable proxy or
+    exhausted budget.
+
+    Args:
+        settings: Agent configuration with proxy URL and min token budget.
+
+    Returns:
+        The model name to use for this run.
+
+    Raises:
+        typer.Exit: If the proxy is unreachable or budget is exhausted.
+    """
+    import httpx
+
+    base = settings.proxy_base_url.rstrip("/")
+    status_url = base.replace("/v1", "") + "/status"
+
+    try:
+        resp = httpx.get(status_url, timeout=5)
+        resp.raise_for_status()
+        data = resp.json()
+    except (httpx.ConnectError, httpx.TimeoutException) as exc:
+        logger.error("preflight.proxy_unreachable", url=status_url, error=str(exc))
+        raise typer.Exit(code=1) from None
+    except httpx.HTTPStatusError as exc:
+        logger.error("preflight.proxy_error", url=status_url, status=exc.response.status_code)
+        raise typer.Exit(code=1) from None
+
+    # Bare mode — proxy is up but no RADIUS session
+    if data.get("no_radius_session"):
+        logger.info("preflight.bare_mode", proxy=status_url)
+        return settings.model_name
+
+    # RADIUS active — check budget
+    tokens_remaining = data.get("tokens_remaining", 0)
+    model_allowed = data.get("model_allowed", settings.model_name)
+    policy_mode = data.get("policy_mode", "enforce")
+
+    logger.info(
+        "preflight.radius_active",
+        model_allowed=model_allowed,
+        tokens_remaining=tokens_remaining,
+        budget_pct=data.get("budget_pct"),
+        policy_mode=policy_mode,
+    )
+
+    if tokens_remaining < settings.min_token_budget:
+        if policy_mode == "monitor":
+            logger.warning(
+                "preflight.budget_low_monitor",
+                tokens_remaining=tokens_remaining,
+                min_token_budget=settings.min_token_budget,
+            )
+        else:
+            logger.error(
+                "preflight.budget_exhausted",
+                tokens_remaining=tokens_remaining,
+                min_token_budget=settings.min_token_budget,
+            )
+            raise typer.Exit(code=1)
+
+    return model_allowed
+
+
 @app.command()
 def run(
     env: Annotated[str, typer.Option("--env", help="Environment name (local, prod)")] = "local",
@@ -91,6 +157,9 @@ def run(
         str | None,
         typer.Option("--target", help="Scrape only this target (u14-hg, u13-hg, u14-academy)"),
     ] = None,
+    no_proxy: Annotated[
+        bool, typer.Option("--no-proxy", help="Bypass iron-claw proxy, go direct to Anthropic")
+    ] = False,
 ) -> None:
     """Run the match-scraper agent."""
     from src.celery.queue_client import MatchQueueClient
@@ -105,6 +174,8 @@ def run(
         settings.model_name = model
     if proxy_url:
         settings.proxy_base_url = proxy_url
+    if no_proxy:
+        settings.proxy_enabled = False
     if dry_run:
         settings.dry_run = True
 
@@ -114,10 +185,22 @@ def run(
     run_id = uuid.uuid4().hex[:12]
     structlog.contextvars.bind_contextvars(run_id=run_id, env=env)
 
+    # Proxy preflight — validate budget and resolve model from RADIUS
+    if settings.proxy_enabled:
+        preflight_model = _proxy_preflight(settings)
+        if preflight_model != settings.model_name:
+            logger.info(
+                "preflight.model_override",
+                configured=settings.model_name,
+                using=preflight_model,
+            )
+            settings.model_name = preflight_model
+
     logger.info(
         "agent.starting",
         model=settings.model_name,
         proxy=settings.proxy_base_url,
+        proxy_enabled=settings.proxy_enabled,
         dry_run=settings.dry_run,
     )
 

@@ -58,6 +58,7 @@ async def scrape_matches(
     league: str | None = None,
     division: str | None = None,
     conference: str | None = None,
+    club: str | None = None,
 ) -> str:
     """Scrape match data from the MLS Next website for a date range.
 
@@ -71,6 +72,8 @@ async def scrape_matches(
         league: League type ("Homegrown" or "Academy"). Defaults to agent config.
         division: Division filter for Homegrown (e.g. "Northeast"). Defaults to agent config.
         conference: Conference filter for Academy (e.g. "New England"). Optional.
+        club: Club name filter (e.g. "Intercontinental Football Academy of New England").
+            Filters results to only matches involving this club. Optional.
     """
     from src.scraper.config import ScrapingConfig
     from src.scraper.mls_scraper import MLSScraper
@@ -95,6 +98,7 @@ async def scrape_matches(
         league=league or settings.league,
         division=division or settings.division,
         conference=conference or "",
+        club=club or "",
         start_date=parsed_start,
         end_date=parsed_end,
         look_back_days=look_back,
@@ -144,11 +148,13 @@ async def scrape_matches(
     team_filter = ctx.deps.team_filter
     if team_filter:
         before = len(built)
-        built = [
-            m for m in built
-            if team_filter in (m["home_team"], m["away_team"])
-        ]
-        logger.info("tool.scrape_matches.team_filter", team=team_filter, before=before, after=len(built))
+        built = [m for m in built if team_filter in (m["home_team"], m["away_team"])]
+        logger.info(
+            "tool.scrape_matches.team_filter",
+            team=team_filter,
+            before=before,
+            after=len(built),
+        )
 
     ctx.deps._scraped_matches += built
 

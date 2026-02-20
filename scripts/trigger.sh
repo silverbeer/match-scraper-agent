@@ -93,6 +93,16 @@ if [[ -f "$ENV_FILE" ]]; then
     set +a
 fi
 
+# ── Resolve kubectl context for prod ──────────────────────────────────
+if [[ "$ENV" == "prod" ]]; then
+    KUBE_CONTEXT="${AGENT_KUBE_CONTEXT:-}"
+    if [[ -z "$KUBE_CONTEXT" ]]; then
+        printf "${RED}AGENT_KUBE_CONTEXT is not set.${RESET}\n"
+        printf "Set it in envs/.env.prod or export it before running.\n"
+        exit 1
+    fi
+fi
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # LOCAL MODE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -299,16 +309,17 @@ if [[ "$ENV" == "local" ]]; then
 elif [[ "$ENV" == "prod" ]]; then
 
     # Verify kubectl access
-    if ! kubectl cluster-info >/dev/null 2>&1; then
-        printf "${RED}Cannot reach K3s cluster.${RESET}\n"
-        printf "Check: kubectl config current-context\n"
+    printf "${BOLD}Using kubectl context: %s${RESET}\n" "$KUBE_CONTEXT"
+    if ! kubectl --context "$KUBE_CONTEXT" cluster-info >/dev/null 2>&1; then
+        printf "${RED}Cannot reach cluster (context: %s).${RESET}\n" "$KUBE_CONTEXT"
+        printf "Check: kubectl config get-contexts %s\n" "$KUBE_CONTEXT"
         exit 1
     fi
 
     # Verify CronJob exists
-    if ! kubectl get cronjob "$CRONJOB_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
+    if ! kubectl --context "$KUBE_CONTEXT" get cronjob "$CRONJOB_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
         printf "${RED}CronJob '%s' not found in namespace '%s'.${RESET}\n" "$CRONJOB_NAME" "$NAMESPACE"
-        printf "Deploy first: kubectl apply -f k3s/match-scraper-agent/\n"
+        printf "Deploy first: kubectl --context %s apply -f k3s/match-scraper-agent/\n" "$KUBE_CONTEXT"
         exit 1
     fi
 
@@ -319,16 +330,16 @@ elif [[ "$ENV" == "prod" ]]; then
     # Build the Job, optionally overriding args for --dry-run
     if [[ "$DRY_RUN" == true ]]; then
         printf "${BOLD}Creating Job (dry-run): %s${RESET}\n" "$JOB_NAME"
-        kubectl create job "$JOB_NAME" \
+        kubectl --context "$KUBE_CONTEXT" create job "$JOB_NAME" \
             --from="cronjob/$CRONJOB_NAME" \
             -n "$NAMESPACE" \
             --dry-run=none \
             -o json \
             | jq '.spec.template.spec.containers[0].args = ["run", "--env", "prod", "--dry-run"]' \
-            | kubectl apply -f -
+            | kubectl --context "$KUBE_CONTEXT" apply -f -
     else
         printf "${BOLD}Creating Job: %s${RESET}\n" "$JOB_NAME"
-        kubectl create job "$JOB_NAME" \
+        kubectl --context "$KUBE_CONTEXT" create job "$JOB_NAME" \
             --from="cronjob/$CRONJOB_NAME" \
             -n "$NAMESPACE"
     fi
@@ -339,17 +350,17 @@ elif [[ "$ENV" == "prod" ]]; then
     # Follow logs if requested
     if [[ "$FOLLOW" == true ]]; then
         printf "\n${BOLD}Waiting for pod to start...${RESET}\n"
-        kubectl wait --for=condition=Ready \
+        kubectl --context "$KUBE_CONTEXT" wait --for=condition=Ready \
             -l "job-name=$JOB_NAME" \
             pod -n "$NAMESPACE" \
             --timeout=60s 2>/dev/null || true
 
         printf "${BOLD}Tailing logs:${RESET}\n\n"
-        kubectl logs -f -l "job-name=$JOB_NAME" -n "$NAMESPACE"
+        kubectl --context "$KUBE_CONTEXT" logs -f -l "job-name=$JOB_NAME" -n "$NAMESPACE"
 
         # Show final job status
         printf "\n${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-        STATUS=$(kubectl get job "$JOB_NAME" -n "$NAMESPACE" -o jsonpath='{.status.conditions[0].type}' 2>/dev/null || echo "Unknown")
+        STATUS=$(kubectl --context "$KUBE_CONTEXT" get job "$JOB_NAME" -n "$NAMESPACE" -o jsonpath='{.status.conditions[0].type}' 2>/dev/null || echo "Unknown")
         if [[ "$STATUS" == "Complete" ]]; then
             printf "${GREEN}Job completed successfully${RESET}\n"
         else
@@ -358,7 +369,7 @@ elif [[ "$ENV" == "prod" ]]; then
         fi
     else
         printf "\nTo follow logs:\n"
-        printf "  kubectl logs -f -l job-name=%s -n %s\n\n" "$JOB_NAME" "$NAMESPACE"
+        printf "  kubectl --context %s logs -f -l job-name=%s -n %s\n\n" "$KUBE_CONTEXT" "$JOB_NAME" "$NAMESPACE"
     fi
 
 fi
