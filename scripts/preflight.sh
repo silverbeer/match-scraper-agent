@@ -348,18 +348,36 @@ if [[ "$ENV" == "local" ]]; then
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 elif [[ "$ENV" == "prod" ]]; then
 
+    # ── Load env file ────────────────────────────────────────────────
+    ENV_FILE="$REPO_DIR/envs/.env.prod"
+    if [[ -f "$ENV_FILE" ]]; then
+        set -a
+        # shellcheck source=/dev/null
+        source "$ENV_FILE"
+        set +a
+    fi
+
+    # ── Resolve kubectl context ──────────────────────────────────────
+    KUBE_CONTEXT="${AGENT_KUBE_CONTEXT:-}"
+    if [[ -z "$KUBE_CONTEXT" ]]; then
+        printf "${RED}AGENT_KUBE_CONTEXT is not set.${RESET}\n"
+        printf "Set it in envs/.env.prod or export it before running.\n"
+        exit 1
+    fi
+    printf "  ctx:  %s\n" "$KUBE_CONTEXT"
+
     # 1. kubectl reachable
-    section "Kubernetes cluster"
-    if kubectl cluster-info >/dev/null 2>&1; then
+    section "Kubernetes cluster (context: $KUBE_CONTEXT)"
+    if kubectl --context "$KUBE_CONTEXT" cluster-info >/dev/null 2>&1; then
         pass "kubectl can reach the cluster"
     else
         fail "kubectl cannot reach the cluster"
-        info "Check: kubectl config current-context"
+        info "Check: kubectl config get-contexts $KUBE_CONTEXT"
     fi
 
     # 2. iron-claw-proxy pod
     section "iron-claw-proxy pod"
-    POD_STATUS=$(kubectl get pods -n iron-claw -l app=iron-claw-proxy -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
+    POD_STATUS=$(kubectl --context "$KUBE_CONTEXT" get pods -n iron-claw -l app=iron-claw-proxy -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
     if [[ "$POD_STATUS" == "Running" ]]; then
         pass "iron-claw-proxy pod is Running"
     elif [[ -n "$POD_STATUS" ]]; then
@@ -370,7 +388,7 @@ elif [[ "$ENV" == "prod" ]]; then
 
     # 3. RabbitMQ pod
     section "RabbitMQ pod"
-    POD_STATUS=$(kubectl get pods -n match-scraper -l app=rabbitmq -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
+    POD_STATUS=$(kubectl --context "$KUBE_CONTEXT" get pods -n match-scraper -l app=rabbitmq -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
     if [[ "$POD_STATUS" == "Running" ]]; then
         pass "RabbitMQ pod is Running"
     elif [[ -n "$POD_STATUS" ]]; then
@@ -381,7 +399,7 @@ elif [[ "$ENV" == "prod" ]]; then
 
     # 4. missing-table-api pod
     section "missing-table-api pod"
-    POD_STATUS=$(kubectl get pods -n missing-table -l app.kubernetes.io/name=missing-table,app.kubernetes.io/component=backend -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
+    POD_STATUS=$(kubectl --context "$KUBE_CONTEXT" get pods -n missing-table -l app.kubernetes.io/name=missing-table,app.kubernetes.io/component=backend -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
     if [[ "$POD_STATUS" == "Running" ]]; then
         pass "missing-table-api pod is Running"
     elif [[ -n "$POD_STATUS" ]]; then
@@ -392,8 +410,8 @@ elif [[ "$ENV" == "prod" ]]; then
 
     # 5. CronJob exists
     section "CronJob"
-    if kubectl get cronjob match-scraper-agent -n match-scraper >/dev/null 2>&1; then
-        SCHEDULE=$(kubectl get cronjob match-scraper-agent -n match-scraper -o jsonpath='{.spec.schedule}')
+    if kubectl --context "$KUBE_CONTEXT" get cronjob match-scraper-agent -n match-scraper >/dev/null 2>&1; then
+        SCHEDULE=$(kubectl --context "$KUBE_CONTEXT" get cronjob match-scraper-agent -n match-scraper -o jsonpath='{.spec.schedule}')
         pass "CronJob 'match-scraper-agent' exists (schedule: $SCHEDULE)"
     else
         fail "CronJob 'match-scraper-agent' not found in namespace match-scraper"

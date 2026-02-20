@@ -78,7 +78,7 @@ Configuration is loaded from dotenv files in `envs/`, selected via `--env`:
 | File | Purpose |
 |------|---------|
 | `envs/.env.local` | Local development — all components on Mac Mini / Air |
-| `envs/.env.prod` | Production — K3s cluster |
+| `envs/.env.prod` | Production — Linode LKE |
 
 Precedence: **env vars > dotenv file > code defaults**. You can always override a setting with a real environment variable, even when using a dotenv file.
 
@@ -98,6 +98,7 @@ All settings use the `AGENT_` prefix.
 | `AGENT_DIVISION` | `Northeast` | Default division for scraping |
 | `AGENT_MISSING_TABLE_API_URL` | `http://localhost:8000` | Missing Table API URL (for scraper config) |
 | `AGENT_MISSING_TABLE_API_KEY` | *(empty)* | Missing Table API key |
+| `AGENT_KUBE_CONTEXT` | — | kubectl context for scripts (`lke560651-ctx` / `rancher-desktop`) |
 | `AGENT_DRY_RUN` | `false` | Skip mutating operations |
 | `AGENT_JSON_LOGS` | `false` | Output structured JSON log lines |
 | `AGENT_LOG_LEVEL` | `info` | Minimum log level |
@@ -145,6 +146,10 @@ cd tests && uv run pytest -v
 uv run ruff check src/ tests/
 uv run ruff format --check src/ tests/
 ```
+
+## Infrastructure Topology
+
+Production runs on Linode LKE (`lke560651-ctx`), not the local Rancher Desktop cluster. See [docs/infrastructure-topology.md](docs/infrastructure-topology.md) for the full multi-cluster topology, component placement, and data flow.
 
 ## K3s Deployment
 
