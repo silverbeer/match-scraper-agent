@@ -116,21 +116,30 @@ def _proxy_preflight(settings: AgentSettings) -> str:
     # RADIUS active — check budget
     tokens_remaining = data.get("tokens_remaining", 0)
     model_allowed = data.get("model_allowed", settings.model_name)
+    policy_mode = data.get("policy_mode", "enforce")
 
     logger.info(
         "preflight.radius_active",
         model_allowed=model_allowed,
         tokens_remaining=tokens_remaining,
         budget_pct=data.get("budget_pct"),
+        policy_mode=policy_mode,
     )
 
     if tokens_remaining < settings.min_token_budget:
-        logger.error(
-            "preflight.budget_exhausted",
-            tokens_remaining=tokens_remaining,
-            min_token_budget=settings.min_token_budget,
-        )
-        raise typer.Exit(code=1)
+        if policy_mode == "monitor":
+            logger.warning(
+                "preflight.budget_low_monitor",
+                tokens_remaining=tokens_remaining,
+                min_token_budget=settings.min_token_budget,
+            )
+        else:
+            logger.error(
+                "preflight.budget_exhausted",
+                tokens_remaining=tokens_remaining,
+                min_token_budget=settings.min_token_budget,
+            )
+            raise typer.Exit(code=1)
 
     return model_allowed
 
