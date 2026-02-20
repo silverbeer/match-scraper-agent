@@ -36,10 +36,13 @@ def create_agent(settings: AgentSettings) -> Agent[AgentDeps, AgentResult]:
     Returns:
         A configured PydanticAI Agent instance.
     """
-    provider = AnthropicProvider(
-        base_url=settings.proxy_base_url,
-        api_key=settings.anthropic_api_key,
-    )
+    if settings.proxy_enabled:
+        provider = AnthropicProvider(
+            base_url=settings.proxy_base_url,
+            api_key=settings.anthropic_api_key,
+        )
+    else:
+        provider = AnthropicProvider(api_key=settings.anthropic_api_key)
     model = AnthropicModel(settings.model_name, provider=provider)
 
     return Agent(

@@ -9,25 +9,19 @@ from pydantic_settings import BaseSettings
 ENVS_DIR = Path(__file__).resolve().parents[2] / "envs"
 
 
-def env_file_path(env: str) -> Path:
+def env_file_path(env: str) -> Path | None:
     """Resolve the dotenv file for a given environment name.
 
     Args:
         env: Environment name (e.g. "local", "prod").
 
     Returns:
-        Path to envs/.env.<env>.
-
-    Raises:
-        FileNotFoundError: If the env file does not exist.
+        Path to envs/.env.<env>, or None if it doesn't exist (e.g. in a
+        container where settings come from environment variables).
     """
     path = ENVS_DIR / f".env.{env}"
     if not path.is_file():
-        available = [p.name for p in ENVS_DIR.glob(".env.*")] if ENVS_DIR.is_dir() else []
-        msg = f"Env file not found: {path}"
-        if available:
-            msg += f" (available: {', '.join(sorted(available))})"
-        raise FileNotFoundError(msg)
+        return None
     return path
 
 
@@ -50,6 +44,8 @@ class AgentSettings(BaseSettings):
     division: str = "Northeast"
     missing_table_api_url: str = "http://localhost:8000"
     missing_table_api_key: str = ""
+    proxy_enabled: bool = True
+    min_token_budget: int = 5000
     dry_run: bool = False
     json_logs: bool = False
     log_level: str = "info"
