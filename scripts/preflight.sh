@@ -381,7 +381,7 @@ elif [[ "$ENV" == "prod" ]]; then
 
     # 4. missing-table-api pod
     section "missing-table-api pod"
-    POD_STATUS=$(kubectl get pods -n missing-table -l app=missing-table-api -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
+    POD_STATUS=$(kubectl get pods -n missing-table -l app.kubernetes.io/name=missing-table,app.kubernetes.io/component=backend -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
     if [[ "$POD_STATUS" == "Running" ]]; then
         pass "missing-table-api pod is Running"
     elif [[ -n "$POD_STATUS" ]]; then
