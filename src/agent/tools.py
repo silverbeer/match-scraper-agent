@@ -148,11 +148,13 @@ async def scrape_matches(
     team_filter = ctx.deps.team_filter
     if team_filter:
         before = len(built)
-        built = [
-            m for m in built
-            if team_filter in (m["home_team"], m["away_team"])
-        ]
-        logger.info("tool.scrape_matches.team_filter", team=team_filter, before=before, after=len(built))
+        built = [m for m in built if team_filter in (m["home_team"], m["away_team"])]
+        logger.info(
+            "tool.scrape_matches.team_filter",
+            team=team_filter,
+            before=before,
+            after=len(built),
+        )
 
     ctx.deps._scraped_matches += built
 
