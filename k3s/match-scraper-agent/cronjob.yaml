@@ -4,7 +4,7 @@ metadata:
   name: match-scraper-agent
   namespace: match-scraper
 spec:
-  schedule: "0 14 * * *"  # Daily at 14:00 UTC
+  schedule: "0 2,8,14,20 * * *"  # Every 6 hours (02:00, 08:00, 14:00, 20:00 UTC)
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -27,7 +27,7 @@ spec:
               resources:
                 requests:
                   cpu: 200m
-                  memory: 512Mi
+                  memory: 1Gi
                 limits:
                   cpu: "1"
-                  memory: 1Gi
+                  memory: 2Gi

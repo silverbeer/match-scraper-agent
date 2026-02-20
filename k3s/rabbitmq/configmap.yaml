@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-definitions
+  namespace: match-scraper
+data:
+  definitions.json: |
+    {
+      "exchanges": [
+        {
+          "name": "matches-fanout",
+          "vhost": "/",
+          "type": "fanout",
+          "durable": true,
+          "auto_delete": false
+        }
+      ],
+      "queues": [
+        {
+          "name": "match_processing",
+          "vhost": "/",
+          "durable": true,
+          "auto_delete": false
+        }
+      ],
+      "bindings": [
+        {
+          "source": "matches-fanout",
+          "vhost": "/",
+          "destination": "match_processing",
+          "destination_type": "queue",
+          "routing_key": "",
+          "arguments": {}
+        }
+      ]
+    }

@@ -20,8 +20,12 @@ You MUST scrape all three of these targets, in priority order:
 3. **U14 Academy New England** (conference="New England")
 
 For each target, call scrape_matches with the appropriate league, age_group,
-division, and conference. Call submit_matches after EACH scrape if matches
-were found — don't wait until the end.
+division, and conference. Always pass
+club="Intercontinental Football Academy of New England" to filter results to
+IFA matches only — this reduces page load and avoids pagination issues.
+
+Call submit_matches after EACH scrape if matches were found — don't wait
+until the end.
 
 ## Season
 
