@@ -75,6 +75,20 @@ _TARGET_TEAM_FILTER: dict[str, str] = {
 }
 
 
+def _queue_client_kwargs(settings: AgentSettings) -> dict[str, str]:
+    """Build kwargs for MatchQueueClient based on settings.
+
+    If queue_name is set, publish directly to that queue.
+    Otherwise fall back to the exchange_name (fanout) behavior.
+    """
+    kwargs: dict[str, str] = {"broker_url": settings.rabbitmq_url}
+    if settings.queue_name:
+        kwargs["queue_name"] = settings.queue_name
+    else:
+        kwargs["exchange_name"] = settings.exchange_name
+    return kwargs
+
+
 def _proxy_preflight(settings: AgentSettings) -> str:
     """Check iron-claw proxy status and return the model to use.
 
@@ -206,10 +220,7 @@ def run(
 
     try:
         agent = create_agent(settings)
-        queue_client = MatchQueueClient(
-            broker_url=settings.rabbitmq_url,
-            exchange_name=settings.exchange_name,
-        )
+        queue_client = MatchQueueClient(**_queue_client_kwargs(settings))
         if target and target not in _TARGET_PROMPTS:
             valid = ", ".join(sorted(_TARGET_PROMPTS))
             typer.echo(f"Unknown target '{target}'. Valid targets: {valid}", err=True)
@@ -298,10 +309,7 @@ def check(
     try:
         from src.celery.queue_client import MatchQueueClient
 
-        client = MatchQueueClient(
-            broker_url=settings.rabbitmq_url,
-            exchange_name=settings.exchange_name,
-        )
+        client = MatchQueueClient(**_queue_client_kwargs(settings))
         if client.check_connection():
             typer.echo("  status: connected")
         else:

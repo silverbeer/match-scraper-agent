@@ -39,6 +39,7 @@ class AgentSettings(BaseSettings):
     anthropic_api_key: str = "agent-via-proxy"
     rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
     exchange_name: str = "matches-fanout"
+    queue_name: str = ""
     league: str = "Homegrown"
     age_group: str = "U14"
     division: str = "Northeast"
