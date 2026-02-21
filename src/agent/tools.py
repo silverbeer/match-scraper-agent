@@ -47,7 +47,7 @@ def get_today_info(ctx: RunContext[AgentDeps]) -> str:
 
 # Season end date — enforced as a floor for end_date so the LLM can't
 # accidentally use a shorter range than the full remaining season.
-SEASON_END = date(2026, 5, 10)
+SEASON_END = date(2026, 6, 30)
 
 
 async def scrape_matches(

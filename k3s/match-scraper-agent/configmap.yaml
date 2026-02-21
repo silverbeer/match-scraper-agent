@@ -6,8 +6,8 @@ metadata:
 data:
   AGENT_PROXY_BASE_URL: "http://iron-claw-proxy.iron-claw.svc.cluster.local:8100"
   AGENT_MODEL_NAME: "claude-haiku-4-5-20251001"
-  AGENT_RABBITMQ_URL: "amqp://guest:guest@rabbitmq.match-scraper.svc.cluster.local:5672/"
-  AGENT_EXCHANGE_NAME: "matches-fanout"
+  AGENT_RABBITMQ_URL: "amqp://guest:guest@messaging-rabbitmq.match-scraper.svc.cluster.local:5672/"
+  AGENT_QUEUE_NAME: "matches.prod"
   AGENT_LEAGUE: "Homegrown"
   AGENT_AGE_GROUP: "U14"
   AGENT_DIVISION: "Northeast"

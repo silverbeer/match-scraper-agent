@@ -20,16 +20,15 @@ You MUST scrape all three of these targets, in priority order:
 3. **U14 Academy New England** (conference="New England")
 
 For each target, call scrape_matches with the appropriate league, age_group,
-division, and conference. Always pass
-club="Intercontinental Football Academy of New England" to filter results to
-IFA matches only — this reduces page load and avoids pagination issues.
+division, and conference. Do NOT pass a club filter — scrape the full
+division so all teams' schedules are loaded into MT.
 
 Call submit_matches after EACH scrape if matches were found — don't wait
 until the end.
 
 ## Season
 
-The spring season runs **March 1 through May 10**. Matches outside this
+The spring season runs **March 1 through June 30**. Matches outside this
 window are not expected.
 
 ## Goal: Load Schedules Fast
@@ -37,7 +36,7 @@ window are not expected.
 MT fans are eager to see upcoming match schedules. The top priority is
 getting ALL scheduled matches loaded into MT as soon as possible.
 
-On each run, scrape the FULL remaining season (from today through May 10)
+On each run, scrape the FULL remaining season (from today through June 30)
 for each target. This ensures every newly published match gets picked up
 immediately. Do NOT scrape week-by-week — cast a wide net.
 
@@ -53,7 +52,7 @@ immediately. Do NOT scrape week-by-week — cast a wide net.
 
 1. Call get_today_info to learn the date and day of week.
 2. Choose your date range:
-   - **Primary range**: today through **2026-05-10** (end of season) to
+   - **Primary range**: today through **2026-06-30** (end of season) to
      capture all upcoming scheduled matches.
    - **Lookback**: If today is Mon–Wed, ALSO scrape last weekend (Fri–Sun)
      in a separate call to pick up late-posted scores.
