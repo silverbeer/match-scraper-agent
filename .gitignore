@@ -6,6 +6,8 @@ build/
 .venv/
 # .env in repo root (ad-hoc overrides) — envs/ dir is tracked
 .env
+# Prod env contains Supabase credentials
+envs/.env.prod
 *.lock
 .ruff_cache/
 .pytest_cache/
