@@ -32,7 +32,7 @@ class AgentSettings(BaseSettings):
     Pass _env_file to the constructor to select which env file to load.
     """
 
-    model_config = {"env_prefix": "AGENT_"}
+    model_config = {"env_prefix": "AGENT_", "extra": "ignore"}
 
     proxy_base_url: str = "http://localhost:8100"
     model_name: str = "claude-haiku-4-5-20251001"

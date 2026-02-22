@@ -46,6 +46,40 @@ def _classify_error(exc: Exception, proxy_url: str) -> tuple[str, bool]:
     return str(exc), False
 
 
+# Target → scraper config (age_group, league, division, conference, club)
+_TARGET_SCRAPER_CONFIG: dict[str, dict[str, str]] = {
+    "u14-hg": {
+        "age_group": "U14",
+        "league": "Homegrown",
+        "division": "Northeast",
+    },
+    "u14-hg-ifa": {
+        "age_group": "U14",
+        "league": "Homegrown",
+        "division": "Northeast",
+    },
+    "u13-hg": {
+        "age_group": "U13",
+        "league": "Homegrown",
+        "division": "Northeast",
+    },
+    "u13-hg-ifa": {
+        "age_group": "U13",
+        "league": "Homegrown",
+        "division": "Northeast",
+    },
+    "u14-academy": {
+        "age_group": "U14",
+        "league": "Academy",
+        "conference": "New England",
+    },
+    "u14-academy-ifa": {
+        "age_group": "U14",
+        "league": "Academy",
+        "conference": "New England",
+    },
+}
+
 _TARGET_PROMPTS: dict[str, str] = {
     "u14-hg": ("Only scrape U14 Homegrown Northeast today. Do not scrape other targets."),
     "u14-hg-ifa": (
@@ -316,3 +350,109 @@ def check(
             typer.echo("  status: UNREACHABLE")
     except Exception as exc:
         typer.echo(f"  status: ERROR ({exc})")
+
+
+@app.command()
+def scrape(
+    target: Annotated[
+        str,
+        typer.Option("--target", help="Scrape target (u14-hg, u14-hg-ifa, u13-hg, etc.)"),
+    ],
+    env: Annotated[str, typer.Option("--env", help="Environment name (local, prod)")] = "local",
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Output raw match dicts as JSON")
+    ] = False,
+) -> None:
+    """Scrape matches directly — no LLM, no API key, no proxy needed."""
+    import asyncio
+    from datetime import date
+
+    from src.scraper.config import ScrapingConfig
+    from src.scraper.mls_scraper import MLSScraper
+
+    from agent.tools import (
+        SEASON_END,
+        _current_season,
+        _normalize_team_name,
+    )
+    from config.settings import AgentSettings, env_file_path
+    from utils.logger import configure_logging
+
+    configure_logging(json_output=False)
+
+    if target not in _TARGET_SCRAPER_CONFIG:
+        valid = ", ".join(sorted(_TARGET_SCRAPER_CONFIG))
+        typer.echo(f"Unknown target '{target}'. Valid targets: {valid}", err=True)
+        raise typer.Exit(code=1)
+
+    settings = AgentSettings(_env_file=env_file_path(env))
+    target_cfg = _TARGET_SCRAPER_CONFIG[target]
+    team_filter = _TARGET_TEAM_FILTER.get(target, "")
+
+    today = date.today()
+    config = ScrapingConfig(
+        age_group=target_cfg.get("age_group", settings.age_group),
+        league=target_cfg.get("league", settings.league),
+        division=target_cfg.get("division", settings.division),
+        conference=target_cfg.get("conference", ""),
+        club="",
+        start_date=today,
+        end_date=SEASON_END,
+        look_back_days=(SEASON_END - today).days,
+        missing_table_api_url=settings.missing_table_api_url,
+        missing_table_api_key=settings.missing_table_api_key or "unused",
+    )
+
+    label = f"{config.age_group} {config.league}"
+    if config.conference:
+        label += f" {config.conference}"
+    elif config.division:
+        label += f" {config.division}"
+    typer.echo(f"Scraping {label} ({today} to {SEASON_END})...")
+
+    scraper = MLSScraper(config, headless=True)
+    matches = asyncio.run(scraper.scrape_matches())
+
+    if not matches:
+        typer.echo("No matches found.")
+        raise typer.Exit(code=0)
+
+    # Build match dicts (same logic as the agent tool)
+    mt_division = config.conference if config.conference else config.division
+    built = [
+        {
+            "home_team": _normalize_team_name(m.home_team, league=config.league),
+            "away_team": _normalize_team_name(m.away_team, league=config.league),
+            "match_date": m.match_datetime.date().isoformat(),
+            "season": _current_season(),
+            "age_group": config.age_group,
+            "match_type": "League",
+            "division": mt_division,
+            "league": config.league,
+            "home_score": m.home_score if isinstance(m.home_score, int) else None,
+            "away_score": m.away_score if isinstance(m.away_score, int) else None,
+            "match_status": m.match_status,
+            "external_match_id": m.match_id,
+            "location": m.location,
+            "source": "match-scraper-agent",
+        }
+        for m in matches
+    ]
+
+    # Apply team filter
+    if team_filter:
+        built = [m for m in built if team_filter in (m["home_team"], m["away_team"])]
+
+    if json_output:
+        import json
+
+        print(json.dumps(built, indent=2))
+    else:
+        typer.echo(f"\nFound {len(matches)} matches ({len(built)} after filtering):\n")
+        for m in built:
+            has_score = m["home_score"] is not None
+            score = f" ({m['home_score']}-{m['away_score']})" if has_score else ""
+            typer.echo(
+                f"  {m['match_date']} | {m['home_team']} vs {m['away_team']}"
+                f"{score} [{m['match_status']}]"
+            )
