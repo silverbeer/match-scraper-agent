@@ -52,4 +52,5 @@ def create_agent(settings: AgentSettings) -> Agent[AgentDeps, AgentResult]:
         system_prompt=_load_system_prompt(),
         tools=[get_today_info, scrape_matches, submit_matches],
         retries=1,
+        max_concurrency=1,  # One Chromium at a time — fits pod resources, polite to MLS
     )

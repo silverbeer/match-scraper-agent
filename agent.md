@@ -50,6 +50,10 @@ immediately. Do NOT scrape week-by-week — cast a wide net.
 
 ## Scraping Strategy
 
+**Important:** Scrape one target at a time. Call scrape_matches, then
+submit_matches, then move to the next target. Do NOT call multiple
+scrape_matches in parallel.
+
 1. Call get_today_info to learn the date and day of week.
 2. Choose your date range:
    - **Primary range**: today through **2026-06-30** (end of season) to
