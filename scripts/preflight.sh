@@ -288,8 +288,14 @@ if [[ "$ENV" == "local" ]]; then
         fail "Proxy not responding at http://localhost:8100/health"
         if [[ "$FIX" == true ]]; then
             if [[ -d "$IRON_CLAW_DIR" ]]; then
-                info "Starting iron-claw proxy..."
+                info "Starting iron-claw proxy (with RADIUS)..."
                 cd "$IRON_CLAW_DIR"
+                # Source iron-claw .env.local for RADIUS_PASSWORD and friends
+                if [[ -f .env.local ]]; then
+                    set -a; source .env.local; set +a
+                fi
+                export IRON_CLAW_USERNAME="${IRON_CLAW_USERNAME:-iron-claw-scraper}"
+                export PROXY_POLICY_MODE="${PROXY_POLICY_MODE:-monitor}"
                 nohup uv run iron-claw proxy > /tmp/iron-claw-proxy.log 2>&1 &
                 PROXY_PID=$!
                 echo "$PROXY_PID" > /tmp/iron-claw-proxy.pid
@@ -298,7 +304,7 @@ if [[ "$ENV" == "local" ]]; then
                 info "Waiting for proxy (up to 10s)..."
                 if wait_for_url http://localhost:8100/health 10; then
                     ((FAIL_COUNT--))
-                    pass "Proxy started on port 8100"
+                    pass "Proxy started on port 8100 (policy_mode=$PROXY_POLICY_MODE)"
                 else
                     info "Proxy failed to start in time — check: tail /tmp/iron-claw-proxy.log"
                 fi
@@ -379,7 +385,7 @@ elif [[ "$ENV" == "prod" ]]; then
     section "iron-claw-proxy pod"
     POD_STATUS=$(kubectl --context "$KUBE_CONTEXT" get pods -n iron-claw -l app=iron-claw-proxy -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
     if [[ "$POD_STATUS" == "Running" ]]; then
-        pass "iron-claw-proxy pod is Running"
+        pass "iron-claw-proxy pod is Running ($KUBE_CONTEXT)"
     elif [[ -n "$POD_STATUS" ]]; then
         fail "iron-claw-proxy pod status: $POD_STATUS"
     else
@@ -390,22 +396,21 @@ elif [[ "$ENV" == "prod" ]]; then
     section "RabbitMQ pod"
     POD_STATUS=$(kubectl --context "$KUBE_CONTEXT" get pods -n match-scraper -l app=rabbitmq -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
     if [[ "$POD_STATUS" == "Running" ]]; then
-        pass "RabbitMQ pod is Running"
+        pass "RabbitMQ pod is Running ($KUBE_CONTEXT)"
     elif [[ -n "$POD_STATUS" ]]; then
         fail "RabbitMQ pod status: $POD_STATUS"
     else
         fail "RabbitMQ pod not found in namespace match-scraper"
     fi
 
-    # 4. missing-table-api pod
-    section "missing-table-api pod"
-    POD_STATUS=$(kubectl --context "$KUBE_CONTEXT" get pods -n missing-table -l app.kubernetes.io/name=missing-table,app.kubernetes.io/component=backend -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
-    if [[ "$POD_STATUS" == "Running" ]]; then
-        pass "missing-table-api pod is Running"
-    elif [[ -n "$POD_STATUS" ]]; then
-        fail "missing-table-api pod status: $POD_STATUS"
+    # 4. missing-table-api health (runs in LKE, not local cluster)
+    MISSING_TABLE_HEALTH_URL="https://api.missingtable.com/health"
+    section "missing-table-api (${MISSING_TABLE_HEALTH_URL})"
+    HTTP_CODE=$(curl -sf --connect-timeout 5 -o /dev/null -w "%{http_code}" "$MISSING_TABLE_HEALTH_URL" 2>/dev/null || echo "000")
+    if [[ "$HTTP_CODE" == "200" ]]; then
+        pass "missing-table-api is healthy (HTTP $HTTP_CODE)"
     else
-        fail "missing-table-api pod not found in namespace missing-table"
+        fail "missing-table-api unreachable (HTTP $HTTP_CODE)"
     fi
 
     # 5. CronJob exists
