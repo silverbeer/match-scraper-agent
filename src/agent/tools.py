@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, date, datetime
 
 import structlog
@@ -10,6 +11,9 @@ from pydantic_ai import RunContext
 from agent.deps import AgentDeps
 
 logger = structlog.get_logger()
+
+# Serialize browser launches — one Chromium at a time
+_scrape_semaphore = asyncio.Semaphore(1)
 
 # MLS Next full names → missing-table DB names
 TEAM_NAME_MAP: dict[str, str] = {
@@ -116,8 +120,9 @@ async def scrape_matches(
         conference=config.conference or None,
     )
 
-    scraper = MLSScraper(config, headless=True)
-    matches = await scraper.scrape_matches()
+    async with _scrape_semaphore:
+        scraper = MLSScraper(config, headless=ctx.deps.headless)
+        matches = await scraper.scrape_matches()
 
     # For MT backend: division field stores the conference name for Academy league
     # (MT has no separate conference field — "New England" is a division in Academy)

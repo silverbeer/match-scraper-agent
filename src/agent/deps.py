@@ -22,5 +22,6 @@ class AgentDeps:
     queue_client: MatchQueueClient
     settings: AgentSettings
     dry_run: bool = False
+    headless: bool = True
     team_filter: str = ""
     _scraped_matches: list[dict[str, Any]] = field(default_factory=list)

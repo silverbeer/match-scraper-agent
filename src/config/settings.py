@@ -48,6 +48,7 @@ class AgentSettings(BaseSettings):
     proxy_enabled: bool = True
     min_token_budget: int = 5000
     dry_run: bool = False
+    headless: bool = True
     json_logs: bool = False
     log_level: str = "info"
 
