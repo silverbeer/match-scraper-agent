@@ -133,6 +133,7 @@ class TestScrapeMatches:
 
         assert len(deps._scraped_matches) == 1
         assert deps._scraped_matches[0]["home_team"] == "Team A"
+        assert deps._scraped_matches[0]["match_time"] == "18:00"
         assert deps._scraped_matches[0]["source"] == "match-scraper-agent"
 
     def test_scored_match_includes_scores(self) -> None:

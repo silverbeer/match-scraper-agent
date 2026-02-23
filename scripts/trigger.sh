@@ -253,9 +253,9 @@ if [[ "$ENV" == "local" ]]; then
 
     if command -v psql >/dev/null 2>&1; then
         MATCH_COUNT=$(psql "${PSQL_OPTS[@]}" -c \
-            "SELECT count(*) FROM matches WHERE source = 'match-scraper-agent';" 2>/dev/null || echo "")
+            "SELECT count(*) FROM matches WHERE source = 'match-scraper';" 2>/dev/null || echo "")
         RECENT_COUNT=$(psql "${PSQL_OPTS[@]}" -c \
-            "SELECT count(*) FROM matches WHERE source = 'match-scraper-agent' AND created_at > now() - interval '5 minutes';" 2>/dev/null || echo "")
+            "SELECT count(*) FROM matches WHERE source = 'match-scraper' AND created_at > now() - interval '5 minutes';" 2>/dev/null || echo "")
 
         if [[ -n "$MATCH_COUNT" ]]; then
             printf "  ${GREEN}PASS${RESET}  %s total matches from agent in DB\n" "$MATCH_COUNT"
@@ -269,7 +269,7 @@ if [[ "$ENV" == "local" ]]; then
                      FROM matches m
                      JOIN teams ht ON m.home_team_id = ht.id
                      JOIN teams at ON m.away_team_id = at.id
-                     WHERE m.source = 'match-scraper-agent'
+                     WHERE m.source = 'match-scraper'
                        AND m.created_at > now() - interval '5 minutes'
                      ORDER BY m.match_date
                      LIMIT 10;" 2>/dev/null | while IFS='|' read -r MDATE HOME AWAY STATUS; do
