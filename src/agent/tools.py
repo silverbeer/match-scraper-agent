@@ -134,6 +134,9 @@ async def scrape_matches(
             "home_team": _normalize_team_name(m.home_team, league=config.league),
             "away_team": _normalize_team_name(m.away_team, league=config.league),
             "match_date": m.match_datetime.date().isoformat(),
+            "match_time": m.match_datetime.strftime("%H:%M")
+            if m.match_datetime.hour or m.match_datetime.minute
+            else None,
             "season": _current_season(),
             "age_group": config.age_group,
             "match_type": "League",
