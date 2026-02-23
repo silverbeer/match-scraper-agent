@@ -265,6 +265,7 @@ def run(
             queue_client=queue_client,
             settings=settings,
             dry_run=settings.dry_run,
+            headless=settings.headless,
             team_filter=team_filter,
         )
 
