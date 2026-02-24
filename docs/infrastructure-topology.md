@@ -1,43 +1,56 @@
 # Infrastructure Topology
 
-Multi-cluster topology for the match-scraper-agent ecosystem.
+Two-cluster topology: the match-scraper pipeline runs on a local M4 Mac (rancher-desktop K3s), while the missing-table web application runs in cloud K8s.
 
 ## Clusters
 
-| Cluster | Context | Provider | Role |
-|---------|---------|----------|------|
-| LKE (lke560651) | `lke560651-ctx` | Linode LKE | Production |
-| rancher-desktop | `rancher-desktop` | Rancher Desktop (local) | Development |
+| Cluster | Context | Where | Role |
+|---------|---------|-------|------|
+| Cloud K8s | `lke560651-ctx` | Cloud provider (currently LKE — provider may change) | missing-table API + frontend |
+| rancher-desktop | `rancher-desktop` | M4 Mac, local K3s | Scraper pipeline (prod — writes to prod Supabase) |
 
 ## Component Placement
 
-### LKE — Production (`lke560651-ctx`)
+### rancher-desktop — Scraper Pipeline (`rancher-desktop`)
+
+All scraper components run here. This IS production for match data — it writes to **prod Supabase**.
 
 | Namespace | Component | Type |
 |-----------|-----------|------|
-| `iron-claw` | iron-claw-proxy | Deployment |
-| `iron-claw` | FreeRADIUS | Deployment |
 | `match-scraper` | match-scraper-agent | CronJob (daily 14:00 UTC) |
 | `match-scraper` | RabbitMQ | StatefulSet |
 | `match-scraper` | Celery worker | Deployment |
-| `missing-table` | missing-table-api (backend) | Deployment |
-| `missing-table` | missing-table-frontend | Deployment |
-| `missing-table` | Supabase (PostgreSQL) | StatefulSet |
+| `iron-claw` | iron-claw-proxy | Deployment |
+| `iron-claw` | FreeRADIUS | Deployment |
 
-### rancher-desktop — Development (`rancher-desktop`)
+### Cloud K8s — Web Application (`lke560651-ctx`)
 
-Local development runs all services on the Mac via Docker containers and `uv run` processes. No production workloads run here.
+The missing-table API and frontend run here. Provider has changed over time (GKE → DOKS → LKE) and may move again — docs should say "cloud K8s", not a specific provider.
+
+| Namespace | Component | Type |
+|-----------|-----------|------|
+| `missing-table` | missing-table-backend (FastAPI) | Deployment |
+| `missing-table` | missing-table-frontend (Vue/Nginx) | Deployment |
+
+### Supabase (Managed)
+
+| Instance | Purpose | Used by |
+|----------|---------|---------|
+| Prod (`ppgxasqgqbnauvxozmjw.supabase.co`) | missingtable.com | Cloud K8s backend + Celery workers on M4 |
+| Local (`localhost:54321`) | Local development only | Developer workstation |
+
+There is **no dev Supabase instance** — only prod and local.
 
 ## Production Data Flow
 
 ```
-CronJob (match-scraper namespace)
+CronJob (match-scraper namespace, M4 Mac K3s)
   → match-scraper-agent container
-    → LLM calls → iron-claw-proxy (iron-claw namespace) → Anthropic API
+    → LLM calls → iron-claw-proxy (iron-claw namespace, M4 Mac K3s) → Anthropic API
     → scrape_matches() → Playwright → mlssoccer.com
-    → submit_matches() → RabbitMQ (match-scraper namespace)
-      → Celery worker → missing-table-api (missing-table namespace)
-        → PostgreSQL (missing-table namespace)
+    → submit_matches() → RabbitMQ (match-scraper namespace, M4 Mac K3s)
+      → Celery worker (match-scraper namespace, M4 Mac K3s)
+        → prod Supabase (cloud-hosted)
 ```
 
 ## Context Configuration
@@ -46,16 +59,14 @@ Each environment's kubectl context is set via `AGENT_KUBE_CONTEXT` in the corres
 
 | File | Value | Target |
 |------|-------|--------|
-| `envs/.env.prod` | `lke560651-ctx` | Linode LKE |
+| `envs/.env.prod` | `rancher-desktop` | M4 Mac K3s (scraper pipeline) |
 | `envs/.env.local` | `rancher-desktop` | Local Rancher Desktop |
-
-The operational scripts (`preflight.sh`, `trigger.sh`) read this variable and pass `--context` to all `kubectl` calls, ensuring they always target the correct cluster regardless of the active kubeconfig context.
 
 ## Operational Scripts
 
 | Script | What it does |
 |--------|-------------|
 | `scripts/preflight.sh local [--fix]` | Check (and optionally start) local Docker services |
-| `scripts/preflight.sh prod` | Check pod health on LKE via `--context lke560651-ctx` |
+| `scripts/preflight.sh prod` | Check pod health on M4 K3s via `--context rancher-desktop` |
 | `scripts/trigger.sh local [--dry-run]` | Run agent locally with preflight + post-run monitoring |
-| `scripts/trigger.sh prod [--follow]` | Create a Job from the CronJob on LKE |
+| `scripts/trigger.sh prod [--follow]` | Create a Job from the CronJob on M4 K3s |
