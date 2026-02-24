@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **LLM routing:** All calls go through iron-claw proxy (`ANTHROPIC_BASE_URL`)
 - **Scraping:** `mls-match-scraper` library (Playwright + CSS selectors, zero LLM tokens)
 - **Match submission:** `mls-match-scraper` MatchQueueClient → RabbitMQ → Celery workers
-- **Deployment:** K3s CronJob (daily at 14:00 UTC)
+- **Deployment:** K3s CronJob (4x/day at 02:00, 08:00, 14:00, 20:00 UTC)
 - **Default model:** `claude-haiku-4-5-20251001` (cheap, fast — fits small token budgets)
 
 ## Key Technology Choices
