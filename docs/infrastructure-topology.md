@@ -17,7 +17,7 @@ All scraper components run here. This IS production for match data — it writes
 
 | Namespace | Component | Type |
 |-----------|-----------|------|
-| `match-scraper` | match-scraper-agent | CronJob (daily 14:00 UTC) |
+| `match-scraper` | match-scraper-agent | CronJob (4x/day) |
 | `match-scraper` | RabbitMQ | StatefulSet |
 | `match-scraper` | Celery worker | Deployment |
 | `iron-claw` | iron-claw-proxy | Deployment |

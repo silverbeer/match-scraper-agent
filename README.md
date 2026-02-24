@@ -5,7 +5,7 @@ Agentic match data manager for youth soccer. Uses PydanticAI to reason about wha
 ## Architecture
 
 ```
-K3s CronJob (daily 14:00 UTC)
+K3s CronJob (4x/day: 02:00, 08:00, 14:00, 20:00 UTC)
   → match-scraper-agent run --json-logs
     → PydanticAI Agent (claude-haiku-4-5)
       → LLM reasoning via iron-claw proxy :8100 (RADIUS metering)
@@ -161,4 +161,4 @@ kubectl apply -f k3s/match-scraper-agent/secret.yaml
 kubectl apply -f k3s/match-scraper-agent/cronjob.yaml
 ```
 
-The CronJob runs daily at 14:00 UTC with `concurrencyPolicy: Forbid`.
+The CronJob runs 4x/day at 02:00, 08:00, 14:00, 20:00 UTC with `concurrencyPolicy: Forbid`.
