@@ -78,6 +78,16 @@ _TARGET_SCRAPER_CONFIG: dict[str, dict[str, str]] = {
         "league": "Academy",
         "conference": "New England",
     },
+    "u14-hg-florida": {
+        "age_group": "U14",
+        "league": "Homegrown",
+        "division": "Florida",
+    },
+    "u13-hg-florida": {
+        "age_group": "U13",
+        "league": "Homegrown",
+        "division": "Florida",
+    },
 }
 
 _TARGET_PROMPTS: dict[str, str] = {
@@ -98,6 +108,14 @@ _TARGET_PROMPTS: dict[str, str] = {
     "u14-academy-ifa": (
         "Only scrape U14 Academy New England (conference='New England') today. "
         "Only IFA Academy matches will be submitted. Do not scrape other targets."
+    ),
+    "u14-hg-florida": (
+        "Only scrape U14 Homegrown Florida (division='Florida') today. "
+        "Do not scrape other targets."
+    ),
+    "u13-hg-florida": (
+        "Only scrape U13 Homegrown Florida (division='Florida') today. "
+        "Do not scrape other targets."
     ),
 }
 

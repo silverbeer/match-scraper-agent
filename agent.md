@@ -13,11 +13,13 @@ app plays for the U14 HG IFA team. "IFA" is the club name in the MT system.
 
 ## What to Scrape
 
-You MUST scrape all three of these targets, in priority order:
+You MUST scrape all five of these targets, in priority order:
 
 1. **U14 HG Northeast** (top priority — this is our team)
 2. **U13 HG Northeast**
-3. **U14 Academy New England** (conference="New England")
+3. **U14 HG Florida** (division="Florida")
+4. **U13 HG Florida** (division="Florida")
+5. **U14 Academy New England** (conference="New England")
 
 For each target, call scrape_matches with the appropriate league, age_group,
 division, and conference. Do NOT pass a club filter — scrape the full
