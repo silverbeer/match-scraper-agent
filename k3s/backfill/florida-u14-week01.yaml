@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backfill-florida-u14-week01
+  namespace: match-scraper
+  labels:
+    app: match-scraper-agent
+    task: backfill
+    division: florida
+    age-group: u14
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        app: match-scraper-agent
+        task: backfill
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: agent
+          image: ghcr.io/silverbeer/match-scraper-agent:latest
+          args:
+            - scrape
+            - --target
+            - u14-hg-florida
+            - --from
+            - "2025-08-28"
+            - --to
+            - "2025-09-04"
+            - --submit
+            - --env
+            - prod
+          envFrom:
+            - configMapRef:
+                name: match-scraper-agent-config
+            - secretRef:
+                name: match-scraper-agent-secret
+          resources:
+            requests:
+              cpu: 200m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
