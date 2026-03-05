@@ -381,6 +381,14 @@ def scrape(
     json_output: Annotated[
         bool, typer.Option("--json", help="Output raw match dicts as JSON")
     ] = False,
+    from_date: Annotated[
+        str | None,
+        typer.Option("--from", help="Start date (YYYY-MM-DD). Defaults to today."),
+    ] = None,
+    to_date: Annotated[
+        str | None,
+        typer.Option("--to", help="End date (YYYY-MM-DD). Defaults to season end (2026-06-30)."),
+    ] = None,
 ) -> None:
     """Scrape matches directly — no LLM, no API key, no proxy needed."""
     import asyncio
@@ -408,16 +416,22 @@ def scrape(
     target_cfg = _TARGET_SCRAPER_CONFIG[target]
     team_filter = _TARGET_TEAM_FILTER.get(target, "")
 
-    today = date.today()
+    try:
+        start = date.fromisoformat(from_date) if from_date else date.today()
+        end = date.fromisoformat(to_date) if to_date else SEASON_END
+    except ValueError as exc:
+        typer.echo(f"Invalid date format: {exc}. Use YYYY-MM-DD.", err=True)
+        raise typer.Exit(code=1) from None
+
     config = ScrapingConfig(
         age_group=target_cfg.get("age_group", settings.age_group),
         league=target_cfg.get("league", settings.league),
         division=target_cfg.get("division", settings.division),
         conference=target_cfg.get("conference", ""),
         club="",
-        start_date=today,
-        end_date=SEASON_END,
-        look_back_days=(SEASON_END - today).days,
+        start_date=start,
+        end_date=end,
+        look_back_days=(end - start).days,
         missing_table_api_url=settings.missing_table_api_url,
         missing_table_api_key=settings.missing_table_api_key or "unused",
     )
@@ -427,7 +441,7 @@ def scrape(
         label += f" {config.conference}"
     elif config.division:
         label += f" {config.division}"
-    typer.echo(f"Scraping {label} ({today} to {SEASON_END})...")
+    typer.echo(f"Scraping {label} ({start} to {end})...")
 
     scraper = MLSScraper(config, headless=True)
     matches = asyncio.run(scraper.scrape_matches())
