@@ -389,6 +389,10 @@ def scrape(
         str | None,
         typer.Option("--to", help="End date (YYYY-MM-DD). Defaults to season end (2026-06-30)."),
     ] = None,
+    submit: Annotated[
+        bool,
+        typer.Option("--submit", help="Submit scraped matches to RabbitMQ queue"),
+    ] = False,
 ) -> None:
     """Scrape matches directly — no LLM, no API key, no proxy needed."""
     import asyncio
@@ -492,3 +496,22 @@ def scrape(
                 f"  {m['match_date']} | {m['home_team']} vs {m['away_team']}"
                 f"{score} [{m['match_status']}]"
             )
+
+    if submit:
+        from src.celery.queue_client import MatchQueueClient
+
+        queue_client = MatchQueueClient(**_queue_client_kwargs(settings))
+        submitted = 0
+        errors = 0
+        for match_dict in built:
+            try:
+                queue_client.submit_match(match_dict)
+                submitted += 1
+            except Exception as exc:
+                errors += 1
+                logger.warning(
+                    "scrape.submit_error",
+                    match=f"{match_dict['home_team']} vs {match_dict['away_team']}",
+                    error=str(exc),
+                )
+        typer.echo(f"\nSubmitted {submitted} matches to queue ({errors} errors).")
