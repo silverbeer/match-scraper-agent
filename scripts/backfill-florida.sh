@@ -65,7 +65,7 @@ if [[ "$ACTION" == "cleanup" ]]; then
 fi
 
 if [[ "$ACTION" == "plan" ]]; then
-  echo "Florida HG Backfill Plan (${AGE_GROUP^^})"
+  echo "Florida HG Backfill Plan ($(echo "$AGE_GROUP" | tr '[:lower:]' '[:upper:]'))"
   echo "========================================="
   echo ""
   for i in "${!WEEKS[@]}"; do
@@ -155,11 +155,11 @@ if [[ -n "$WEEK_NUM" ]]; then
     echo "Invalid week number: $WEEK_NUM (valid: 1-${#WEEKS[@]})"
     exit 1
   fi
-  echo "Running backfill week $WEEK_NUM for ${AGE_GROUP^^} Florida HG..."
+  echo "Running backfill week $WEEK_NUM for $(echo "$AGE_GROUP" | tr '[:lower:]' '[:upper:]') Florida HG..."
   run_week "$week_idx"
 else
   # Run all weeks
-  echo "Running ALL backfill weeks for ${AGE_GROUP^^} Florida HG..."
+  echo "Running ALL backfill weeks for $(echo "$AGE_GROUP" | tr '[:lower:]' '[:upper:]') Florida HG..."
   for i in "${!WEEKS[@]}"; do
     run_week "$i"
   done
