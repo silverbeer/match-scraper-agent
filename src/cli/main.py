@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 
 import structlog
 import typer
@@ -139,6 +139,49 @@ def _queue_client_kwargs(settings: AgentSettings) -> dict[str, str]:
     else:
         kwargs["exchange_name"] = settings.exchange_name
     return kwargs
+
+
+def _send_telegram_report(
+    settings: AgentSettings,
+    result: Any,
+    deps: Any,
+    env: str,
+    target: str | None,
+) -> None:
+    """Build and send the run summary report to Telegram.
+
+    Silently skips if Telegram is not configured. Logs errors but does
+    not raise — a failed notification should never break the run.
+    """
+    if not settings.telegram_bot_token or not settings.telegram_chat_id:
+        logger.debug("telegram.skipped", reason="not configured")
+        return
+
+    from telegram_notify import TelegramClient
+
+    from utils.report import build_report
+
+    report = build_report(
+        result_summary=result.output.summary,
+        actions=[a.model_dump() for a in result.output.actions],
+        matches_found=result.output.matches_found,
+        matches_submitted=result.output.matches_submitted,
+        scraped_matches=deps._scraped_matches,
+        submission_errors=deps._submission_errors,
+        env=env,
+        target=target,
+        dry_run=deps.dry_run,
+    )
+
+    try:
+        client = TelegramClient(
+            bot_token=settings.telegram_bot_token,
+            chat_id=settings.telegram_chat_id,
+        )
+        client.send(report)
+        logger.info("telegram.sent", chat_id=settings.telegram_chat_id)
+    except Exception as exc:
+        logger.warning("telegram.failed", error=str(exc))
 
 
 def _proxy_preflight(settings: AgentSettings) -> str:
@@ -318,6 +361,15 @@ def run(
         for action in result.output.actions:
             prefix = "[DRY RUN] " if action.dry_run else ""
             typer.echo(f"  {prefix}{action.action}: {action.detail}")
+
+    # Send Telegram summary report
+    _send_telegram_report(
+        settings=settings,
+        result=result,
+        deps=deps,
+        env=env,
+        target=target,
+    )
 
     structlog.contextvars.unbind_contextvars("run_id", "env")
 

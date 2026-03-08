@@ -52,6 +52,10 @@ class AgentSettings(BaseSettings):
     json_logs: bool = False
     log_level: str = "info"
 
+    # Telegram notifications (run summary report)
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
     # Database (missing-table Supabase — used by trigger.sh post-run verification)
     db_host: str = "127.0.0.1"
     db_port: int = 54332
