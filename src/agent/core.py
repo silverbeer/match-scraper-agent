@@ -10,7 +10,7 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 
 from agent.deps import AgentDeps
 from agent.result import AgentResult
-from agent.tools import get_today_info, scrape_matches, submit_matches
+from agent.tools import get_match_status, get_today_info, scrape_matches, submit_matches
 from config.settings import AgentSettings
 
 AGENT_MD = Path(__file__).resolve().parents[2] / "agent.md"
@@ -50,7 +50,7 @@ def create_agent(settings: AgentSettings) -> Agent[AgentDeps, AgentResult]:
         output_type=AgentResult,
         deps_type=AgentDeps,
         system_prompt=_load_system_prompt(),
-        tools=[get_today_info, scrape_matches, submit_matches],
+        tools=[get_today_info, get_match_status, scrape_matches, submit_matches],
         retries=1,
         max_concurrency=1,  # One Chromium at a time — fits pod resources, polite to MLS
     )
