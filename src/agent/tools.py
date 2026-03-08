@@ -212,9 +212,11 @@ async def submit_matches(ctx: RunContext[AgentDeps]) -> str:
             submitted += 1
         except Exception as exc:
             errors += 1
+            match_label = f"{match_dict['home_team']} vs {match_dict['away_team']}"
+            ctx.deps._submission_errors.append({"match": match_label, "error": str(exc)})
             logger.warning(
                 "tool.submit_matches.error",
-                match=f"{match_dict['home_team']} vs {match_dict['away_team']}",
+                match=match_label,
                 error=str(exc),
             )
 

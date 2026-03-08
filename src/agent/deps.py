@@ -25,3 +25,4 @@ class AgentDeps:
     headless: bool = True
     team_filter: str = ""
     _scraped_matches: list[dict[str, Any]] = field(default_factory=list)
+    _submission_errors: list[dict[str, str]] = field(default_factory=list)
