@@ -49,6 +49,67 @@ def get_today_info(ctx: RunContext[AgentDeps]) -> str:
     )
 
 
+async def get_match_status(ctx: RunContext[AgentDeps]) -> str:
+    """Check what match data MT already has for the current season.
+
+    Queries the MT backend for match counts grouped by age group, league,
+    and division. Use this to decide what needs scraping vs what's up to date.
+    """
+    import httpx
+
+    settings = ctx.deps.settings
+    season = _current_season()
+    url = f"{settings.missing_table_api_url}/api/agent/match-summary"
+
+    logger.info("tool.get_match_status", url=url, season=season)
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                url,
+                params={"season": season},
+                headers={"Authorization": f"Bearer {settings.missing_table_api_key}"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        logger.warning("tool.get_match_status.failed", error=str(exc))
+        return "Could not reach MT backend. Falling back to full-season scrape."
+
+    targets = data.get("targets", [])
+    if not targets:
+        return f"MT has no matches for {season}. All targets need full-season sync."
+
+    lines = [f"MT Status ({season} season):\n"]
+    for t in targets:
+        status_parts = []
+        for s in ("played", "scheduled", "tbd", "postponed", "cancelled"):
+            count = t["by_status"].get(s, 0)
+            if count:
+                status_parts.append(f"{count} {s}")
+
+        needs = t.get("needs_score", 0)
+        if needs:
+            status_parts.append(f"{needs} awaiting scores")
+
+        summary = ", ".join(status_parts) if status_parts else "no matches"
+        line = f"{t['age_group']} {t['league']} {t['division']}: {t['total']} matches ({summary})"
+
+        details = []
+        dr = t.get("date_range", {})
+        if dr.get("earliest") and dr.get("latest"):
+            details.append(f"Dates: {dr['earliest']} - {dr['latest']}")
+        if t.get("last_played_date"):
+            details.append(f"Last played: {t['last_played_date']}")
+        if details:
+            line += f"\n  {' | '.join(details)}"
+
+        lines.append(line)
+
+    logger.info("tool.get_match_status.done", target_count=len(targets))
+    return "\n".join(lines)
+
+
 # Season end date — enforced as a floor for end_date so the LLM can't
 # accidentally use a shorter range than the full remaining season.
 SEASON_END = date(2026, 6, 30)

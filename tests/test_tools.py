@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from pydantic_ai import RunContext
 
 from agent.deps import AgentDeps
-from agent.tools import get_today_info, scrape_matches, submit_matches
+from agent.tools import get_match_status, get_today_info, scrape_matches, submit_matches
 from config.settings import AgentSettings
 
 
@@ -207,3 +207,83 @@ class TestSubmitMatches:
         result = asyncio.run(submit_matches(ctx))
         assert "Submitted 2 matches" in result
         assert "1 errors" in result
+
+
+class TestGetMatchStatus:
+    def test_returns_summary(self) -> None:
+        deps = _make_deps()
+        ctx = _make_ctx(deps)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "season": "2025-26",
+            "generated_at": "2026-03-08T14:00:00Z",
+            "targets": [
+                {
+                    "age_group": "U14",
+                    "league": "Homegrown",
+                    "division": "Northeast",
+                    "total": 92,
+                    "by_status": {"played": 45, "scheduled": 40, "tbd": 5, "postponed": 2},
+                    "needs_score": 5,
+                    "date_range": {"earliest": "2026-03-01", "latest": "2026-06-28"},
+                    "last_played_date": "2026-03-07",
+                },
+            ],
+        }
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            result = asyncio.run(get_match_status(ctx))
+
+        assert "MT Status" in result
+        assert "U14 Homegrown Northeast" in result
+        assert "92 matches" in result
+        assert "45 played" in result
+        assert "5 awaiting scores" in result
+
+    def test_fallback_on_error(self) -> None:
+        deps = _make_deps()
+        ctx = _make_ctx(deps)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(side_effect=Exception("connection refused"))
+            mock_client_cls.return_value = mock_client
+
+            result = asyncio.run(get_match_status(ctx))
+
+        assert "Could not reach MT backend" in result
+        assert "full-season scrape" in result
+
+    def test_empty_targets(self) -> None:
+        deps = _make_deps()
+        ctx = _make_ctx(deps)
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "season": "2025-26",
+            "targets": [],
+        }
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            result = asyncio.run(get_match_status(ctx))
+
+        assert "no matches" in result.lower()
+        assert "full-season sync" in result
