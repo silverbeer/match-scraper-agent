@@ -104,7 +104,13 @@ class TestBuildReport:
         now = datetime(2026, 3, 8, 14, 0, tzinfo=UTC)  # Saturday
         matches = [
             _match(status="completed"),
-            _match(home="NYCFC", away="Red Bulls", status="scheduled", home_score=None, away_score=None),
+            _match(
+                home="NYCFC",
+                away="Red Bulls",
+                status="scheduled",
+                home_score=None,
+                away_score=None,
+            ),
         ]
         report = build_report(
             result_summary="",
@@ -177,12 +183,12 @@ class TestIsLastWeekend:
 class TestNextScheduledRun:
     def test_mid_morning(self) -> None:
         now = datetime(2026, 3, 8, 10, 30, tzinfo=UTC)
-        next_run, delta = _next_scheduled_run(now)
+        next_run, _delta = _next_scheduled_run(now)
         assert next_run.hour == 14
 
     def test_after_last_slot(self) -> None:
         now = datetime(2026, 3, 8, 21, 0, tzinfo=UTC)
-        next_run, delta = _next_scheduled_run(now)
+        next_run, _delta = _next_scheduled_run(now)
         assert next_run.hour == 2
         assert next_run.day == 9
 
