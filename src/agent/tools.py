@@ -286,9 +286,9 @@ async def submit_matches(ctx: RunContext[AgentDeps]) -> str:
 
 
 def _current_season() -> str:
-    """Return the current season string (e.g. '2025-26')."""
+    """Return the current season string (e.g. '2025-2026')."""
     today = date.today()
-    # Season starts in August: Aug 2025 → "2025-26", Jan 2026 → "2025-26"
+    # Season starts in August: Aug 2025 → "2025-2026", Jan 2026 → "2025-2026"
     if today.month >= 8:
-        return f"{today.year}-{str(today.year + 1)[2:]}"
-    return f"{today.year - 1}-{str(today.year)[2:]}"
+        return f"{today.year}-{today.year + 1}"
+    return f"{today.year - 1}-{today.year}"
