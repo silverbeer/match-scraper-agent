@@ -14,5 +14,6 @@ data:
   AGENT_MISSING_TABLE_API_URL: "https://api.missingtable.com"
   AGENT_PROXY_ENABLED: "true"
   AGENT_MIN_TOKEN_BUDGET: "5000"
+  AGENT_JOURNAL_PATH: "/data/agent-state/journal.json"
   AGENT_DRY_RUN: "false"
   AGENT_JSON_LOGS: "true"

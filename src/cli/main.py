@@ -336,6 +336,19 @@ def run(
         else:
             user_prompt = "Review today's matches and take appropriate actions."
 
+        # Inject previous run journal into prompt (cross-run memory)
+        journal_context = ""
+        if settings.journal_path:
+            from pathlib import Path
+
+            from utils.journal import format_journal_prompt, read_journal
+
+            prev_journal = read_journal(Path(settings.journal_path))
+            journal_context = format_journal_prompt(prev_journal)
+            if journal_context:
+                user_prompt = f"{journal_context}\n\n{user_prompt}"
+                logger.info("journal.loaded", run_id=prev_journal.run_id if prev_journal else None)
+
         result = agent.run_sync(user_prompt, deps=deps)
     except Exception as exc:
         message, known = _classify_error(exc, settings.proxy_base_url)
@@ -361,6 +374,22 @@ def run(
         for action in result.output.actions:
             prefix = "[DRY RUN] " if action.dry_run else ""
             typer.echo(f"  {prefix}{action.action}: {action.detail}")
+
+    # Write run journal for next run's context
+    if settings.journal_path:
+        from pathlib import Path
+
+        from utils.journal import build_journal, write_journal
+
+        journal = build_journal(
+            run_id=run_id,
+            result=result,
+            scraped_matches=deps._scraped_matches,
+            submission_errors=deps._submission_errors,
+            target=target,
+            dry_run=settings.dry_run,
+        )
+        write_journal(Path(settings.journal_path), journal)
 
     # Send Telegram summary report
     _send_telegram_report(

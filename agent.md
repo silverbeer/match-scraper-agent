@@ -61,6 +61,21 @@ window are not expected.
 - A match with status "tbd" means it was played but the score hasn't been
   posted yet. This is normal — do NOT treat it as an error.
 
+## Run Journal
+
+At the start of each run you may receive a "Previous Run Journal" block in
+your prompt. This tells you what happened last time — matches found, scores
+status, and your own summary. Use it to:
+
+- Prioritize targets that had missing scores last run
+- Notice if a previous run had errors and may need retry
+- Track score posting progress across runs (e.g., "last run had 4 missing
+  scores, now only 1 remains")
+- Avoid unnecessary full scrapes if the last run recently synced everything
+
+If no journal is present, this is either the first run or the journal is
+disabled — proceed with normal decision flow.
+
 ## Scraping Strategy
 
 **Important:** Scrape one target at a time. Call scrape_matches, then
