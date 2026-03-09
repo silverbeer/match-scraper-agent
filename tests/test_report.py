@@ -9,6 +9,7 @@ from utils.report import (
     _format_delta,
     _is_last_weekend,
     _next_scheduled_run,
+    _weekend_scores_section,
     build_report,
 )
 
@@ -84,7 +85,7 @@ class TestBuildReport:
         assert "connection refused" in report
 
     def test_next_run_shown(self) -> None:
-        now = datetime(2026, 3, 8, 14, 2, tzinfo=UTC)
+        now = datetime(2026, 3, 8, 14, 2, tzinfo=UTC)  # March = EDT (UTC-4)
         report = build_report(
             result_summary="",
             actions=[],
@@ -98,7 +99,7 @@ class TestBuildReport:
             now=now,
         )
         assert "Next run" in report
-        assert "20:00 UTC" in report
+        assert "16:00 EDT" in report  # 20:00 UTC = 16:00 EDT
 
     def test_today_missing_scores_shown(self) -> None:
         now = datetime(2026, 3, 8, 14, 0, tzinfo=UTC)  # Saturday
@@ -126,6 +127,62 @@ class TestBuildReport:
         )
         assert "Awaiting Scores" in report
         assert "NYCFC" in report
+
+    def test_weekend_scores_shown_on_monday(self) -> None:
+        now = datetime(2026, 3, 9, 14, 0, tzinfo=UTC)  # Monday
+        matches = [
+            _match(match_date="2026-03-07", status="completed", home_score=3, away_score=1),
+            _match(
+                home="NYCFC",
+                away="Red Bulls",
+                match_date="2026-03-08",
+                status="completed",
+                home_score=2,
+                away_score=0,
+            ),
+            _match(
+                home="Galaxy",
+                away="LAFC",
+                match_date="2026-03-08",
+                status="scheduled",
+                home_score=None,
+                away_score=None,
+            ),
+        ]
+        report = build_report(
+            result_summary="",
+            actions=[],
+            matches_found=3,
+            matches_submitted=3,
+            scraped_matches=matches,
+            submission_errors=[],
+            env="prod",
+            target=None,
+            dry_run=False,
+            now=now,
+        )
+        assert "Weekend Scores" in report
+        assert "IFA" in report
+        assert "NYCFC" in report
+        # Missing match should be in Awaiting Scores, not Weekend Scores
+        assert "Awaiting Scores" in report
+        assert "Galaxy" in report
+
+    def test_header_shows_edt(self) -> None:
+        now = datetime(2026, 3, 8, 18, 10, tzinfo=UTC)  # March = EDT
+        report = build_report(
+            result_summary="",
+            actions=[],
+            matches_found=0,
+            matches_submitted=0,
+            scraped_matches=[],
+            submission_errors=[],
+            env="prod",
+            target=None,
+            dry_run=False,
+            now=now,
+        )
+        assert "14:10 EDT" in report  # 18:10 UTC = 14:10 EDT
 
 
 class TestAgentAwareness:
@@ -196,6 +253,35 @@ class TestNextScheduledRun:
         now = datetime(2026, 3, 8, 1, 0, tzinfo=UTC)
         next_run, _ = _next_scheduled_run(now)
         assert next_run.hour == 2
+
+
+class TestWeekendScores:
+    def test_shows_scores_on_monday(self) -> None:
+        now = datetime(2026, 3, 9, 14, 0, tzinfo=UTC)  # Monday
+        matches = [
+            _match(match_date="2026-03-07", status="completed", home_score=3, away_score=1),
+        ]
+        lines = _weekend_scores_section(now, matches)
+        assert len(lines) == 2
+        assert "Weekend Scores" in lines[0]
+        assert "3" in lines[1]
+        assert "1" in lines[1]
+
+    def test_hidden_on_thursday(self) -> None:
+        now = datetime(2026, 3, 12, 14, 0, tzinfo=UTC)  # Thursday
+        matches = [
+            _match(match_date="2026-03-07", status="completed"),
+        ]
+        lines = _weekend_scores_section(now, matches)
+        assert lines == []
+
+    def test_excludes_unscored(self) -> None:
+        now = datetime(2026, 3, 9, 14, 0, tzinfo=UTC)  # Monday
+        matches = [
+            _match(match_date="2026-03-07", status="scheduled", home_score=None, away_score=None),
+        ]
+        lines = _weekend_scores_section(now, matches)
+        assert lines == []
 
 
 class TestFormatDelta:
