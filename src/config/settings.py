@@ -52,6 +52,9 @@ class AgentSettings(BaseSettings):
     json_logs: bool = False
     log_level: str = "info"
 
+    # Run journal (cross-run memory)
+    journal_path: str = ""
+
     # Telegram notifications (run summary report)
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""

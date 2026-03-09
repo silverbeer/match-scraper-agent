@@ -24,6 +24,9 @@ spec:
                     name: match-scraper-agent-config
                 - secretRef:
                     name: match-scraper-agent-secret
+              volumeMounts:
+                - name: agent-state
+                  mountPath: /data/agent-state
               resources:
                 requests:
                   cpu: 200m
@@ -31,3 +34,7 @@ spec:
                 limits:
                   cpu: "1"
                   memory: 2Gi
+          volumes:
+            - name: agent-state
+              persistentVolumeClaim:
+                claimName: agent-state

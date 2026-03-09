@@ -77,6 +77,7 @@ kubectl rollout status deployment/rabbitmq -n match-scraper --timeout=60s
 
 echo ""
 echo "Applying match-scraper-agent..."
+kubectl apply -f "$SCRIPT_DIR/match-scraper-agent/pvc.yaml"
 kubectl apply -f "$SCRIPT_DIR/match-scraper-agent/configmap.yaml"
 kubectl apply -f "$SECRET_FILE"
 kubectl apply -f "$SCRIPT_DIR/match-scraper-agent/cronjob.yaml"
