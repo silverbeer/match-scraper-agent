@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from telegram_notify import escape
 
 # K3s CronJob schedule hours (UTC)
 _CRON_HOURS = [2, 8, 14, 20]
+
+# Display timezone for reports
+_DISPLAY_TZ = ZoneInfo("America/New_York")
 
 
 def build_report(
@@ -46,7 +50,9 @@ def build_report(
 
     # --- Header ---
     lines.append("*Match Scraper Report*")
-    ts = escape(now.strftime("%Y-%m-%d %H:%M UTC"))
+    local = now.astimezone(_DISPLAY_TZ)
+    tz_abbr = local.strftime("%Z")  # EDT or EST
+    ts = escape(local.strftime(f"%Y-%m-%d %H:%M {tz_abbr}"))
     target_label = escape(target) if target else "all targets"
     header_parts = [ts, escape(env)]
     if target:
@@ -106,6 +112,12 @@ def build_report(
             lines.append(f"  • {match} — {error}")
         lines.append("")
 
+    # --- Weekend Scores ---
+    scored_lines = _weekend_scores_section(now, scraped_matches)
+    if scored_lines:
+        lines.extend(scored_lines)
+        lines.append("")
+
     # --- Missing Scores ---
     missing_lines = _missing_scores_section(now, scraped_matches)
     if missing_lines:
@@ -114,7 +126,9 @@ def build_report(
 
     # --- Next Run ---
     next_run, delta = _next_scheduled_run(now)
-    next_str = escape(next_run.strftime("%H:%M UTC"))
+    next_local = next_run.astimezone(_DISPLAY_TZ)
+    next_tz = next_local.strftime("%Z")
+    next_str = escape(next_local.strftime(f"%H:%M {next_tz}"))
     delta_str = _format_delta(delta)
     lines.append(f"*Next run:* {next_str} \\(in {escape(delta_str)}\\)")
 
@@ -165,6 +179,34 @@ def _is_last_weekend(match_date: str, now: datetime) -> bool:
     last_saturday = last_sunday - timedelta(days=1)
 
     return md in (last_saturday, last_sunday)
+
+
+def _weekend_scores_section(now: datetime, matches: list[dict[str, Any]]) -> list[str]:
+    """Show completed weekend match scores (Mon-Wed only)."""
+    day = now.weekday()
+    if day not in (0, 1, 2):  # Only Mon/Tue/Wed
+        return []
+
+    scored = [
+        m
+        for m in matches
+        if _is_last_weekend(m.get("match_date", ""), now)
+        and m.get("match_status") == "completed"
+    ]
+    if not scored:
+        return []
+
+    lines: list[str] = []
+    n = len(scored)
+    lines.append(f"*Weekend Scores \\({escape(str(n))}\\):*")
+    for m in sorted(scored, key=lambda x: x.get("match_date", "")):
+        home = escape(m.get("home_team", "?"))
+        away = escape(m.get("away_team", "?"))
+        hs = m.get("home_score", "?")
+        aws = m.get("away_score", "?")
+        md = escape(m.get("match_date", "?"))
+        lines.append(f"  • {md} {home} {hs}\\-{aws} {away}")
+    return lines
 
 
 def _missing_scores_section(now: datetime, matches: list[dict[str, Any]]) -> list[str]:
