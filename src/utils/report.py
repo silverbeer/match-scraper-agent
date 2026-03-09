@@ -190,8 +190,7 @@ def _weekend_scores_section(now: datetime, matches: list[dict[str, Any]]) -> lis
     scored = [
         m
         for m in matches
-        if _is_last_weekend(m.get("match_date", ""), now)
-        and m.get("match_status") == "completed"
+        if _is_last_weekend(m.get("match_date", ""), now) and m.get("match_status") == "completed"
     ]
     if not scored:
         return []

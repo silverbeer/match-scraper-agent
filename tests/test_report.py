@@ -128,7 +128,6 @@ class TestBuildReport:
         assert "Awaiting Scores" in report
         assert "NYCFC" in report
 
-
     def test_weekend_scores_shown_on_monday(self) -> None:
         now = datetime(2026, 3, 9, 14, 0, tzinfo=UTC)  # Monday
         matches = [
