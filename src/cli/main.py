@@ -98,6 +98,16 @@ _TARGET_SCRAPER_CONFIG: dict[str, dict[str, str]] = {
         "league": "Homegrown",
         "division": "Northeast",
     },
+    "u16-hg": {
+        "age_group": "U16",
+        "league": "Homegrown",
+        "division": "Northeast",
+    },
+    "u16-hg-ifa": {
+        "age_group": "U16",
+        "league": "Homegrown",
+        "division": "Northeast",
+    },
 }
 
 _TARGET_PROMPTS: dict[str, str] = {
@@ -132,6 +142,11 @@ _TARGET_PROMPTS: dict[str, str] = {
         "Only scrape U15 Homegrown Northeast today. "
         "Only IFA matches will be submitted. Do not scrape other targets."
     ),
+    "u16-hg": ("Only scrape U16 Homegrown Northeast today. Do not scrape other targets."),
+    "u16-hg-ifa": (
+        "Only scrape U16 Homegrown Northeast today. "
+        "Only IFA matches will be submitted. Do not scrape other targets."
+    ),
 }
 
 # Targets that include a team filter — value is the DB team name used for filtering
@@ -139,6 +154,7 @@ _TARGET_TEAM_FILTER: dict[str, str] = {
     "u14-hg-ifa": "IFA",
     "u13-hg-ifa": "IFA",
     "u15-hg-ifa": "IFA",
+    "u16-hg-ifa": "IFA",
     "u14-academy-ifa": "IFA Academy",
 }
 
