@@ -38,22 +38,19 @@ window are not expected.
 
 ## Decision Flow
 
-1. Call `get_today_info()` — learn the date and day of week.
-2. Call `get_match_status()` — see what MT already has for each target.
-3. For each target, decide your strategy based on MT status:
+Your prompt includes a pre-computed **Scrape Plan** with exact parameters for
+each target. The plan is computed in Python from MT's current state — do NOT
+second-guess it.
 
-   - **0 matches in MT** → full-season sync (highest priority, scrape today through Jun 30)
-   - **needs_score > 0** → scrape from a few days before the earliest unscored
-     match through Jun 30 to pick up late-posted scores AND new schedule changes
-   - **Fully up to date** (no needs_score, all future matches present) → skip,
-     or do a light scrape if it's been a while since last played date
-   - **Monday 02:00 UTC run** → full-season sync for ALL targets regardless
-     of status (weekly catch-all for schedule changes)
+1. Follow the plan step by step, in order.
+2. For targets marked **FULL SYNC** or **SCORE SYNC**: call `scrape_matches()`
+   with the exact parameters shown, then call `submit_matches()`.
+3. For targets marked **SKIP**: do nothing.
+4. Do **NOT** call `get_match_status()` — the plan already incorporates it.
+5. Summarize findings across all targets when done.
 
-4. Scrape → submit per target as needed.
-5. If `get_match_status()` fails → fall back to full-season scrape for all
-   targets (current behavior, safe default).
-6. Summarize findings across all targets.
+If no scrape plan is present (targeted run), scrape only the target specified
+in your prompt.
 
 ## Schedule & Scoring Awareness
 

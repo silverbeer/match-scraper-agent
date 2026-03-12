@@ -204,6 +204,7 @@ def _send_telegram_report(
         target=target,
         dry_run=deps.dry_run,
         mt_status=deps._mt_status,
+        scrape_plan=deps._scrape_plan,
     )
 
     try:
@@ -367,7 +368,45 @@ def run(
             user_prompt = _TARGET_PROMPTS[target]
             logger.info("agent.target_filter", target=target, team_filter=team_filter or None)
         else:
-            user_prompt = "Review today's matches and take appropriate actions."
+            # Deterministic planner — compute scrape plan from MT data
+            from datetime import UTC, datetime
+
+            from agent.planner import (
+                compute_scrape_plan,
+                fetch_mt_status,
+                format_plan_prompt,
+                is_weekly_sync_run,
+            )
+            from agent.tools import SEASON_END, _current_season
+
+            now_utc = datetime.now(tz=UTC)
+            mt_targets, mt_status_str = fetch_mt_status(
+                api_url=settings.missing_table_api_url,
+                api_key=settings.missing_table_api_key or "",
+                season=_current_season(),
+            )
+            deps._mt_status = mt_status_str
+
+            weekly = is_weekly_sync_run(now_utc)
+            plan = compute_scrape_plan(
+                mt_targets=mt_targets,
+                target_configs=_TARGET_SCRAPER_CONFIG,
+                today=now_utc.date(),
+                season_end=SEASON_END,
+                is_weekly=weekly,
+            )
+            deps._scrape_plan = plan
+
+            logger.info(
+                "planner.computed",
+                weekly=weekly,
+                mt_status=mt_status_str,
+                full_sync=sum(1 for p in plan.plans if p.action.value == "full_sync"),
+                score_sync=sum(1 for p in plan.plans if p.action.value == "score_sync"),
+                skip=sum(1 for p in plan.plans if p.action.value == "skip"),
+            )
+
+            user_prompt = format_plan_prompt(plan)
 
         # Inject previous run journal into prompt (cross-run memory)
         journal_context = ""

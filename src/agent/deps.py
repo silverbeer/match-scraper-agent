@@ -27,3 +27,4 @@ class AgentDeps:
     _scraped_matches: list[dict[str, Any]] = field(default_factory=list)
     _submission_errors: list[dict[str, str]] = field(default_factory=list)
     _mt_status: str = ""  # "ok", "failed:<reason>", or "" (not called)
+    _scrape_plan: Any = None  # RunPlan from planner, or None for targeted runs

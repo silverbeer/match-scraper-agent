@@ -27,6 +27,7 @@ def build_report(
     target: str | None,
     dry_run: bool,
     mt_status: str = "",
+    scrape_plan: Any = None,
     now: datetime | None = None,
 ) -> str:
     """Build a MarkdownV2-formatted run summary report.
@@ -67,15 +68,26 @@ def build_report(
     awareness = _agent_awareness(now, scraped_matches)
     lines.append(awareness)
 
-    # --- MT Status ---
-    if mt_status.startswith("failed:"):
-        reason = escape(mt_status.removeprefix("failed:"))
-        lines.append(escape("⚠️ MT status check FAILED — full-season scrape fallback"))
-        lines.append(f"  _{reason}_")
-    elif mt_status == "ok":
-        lines.append(escape("📡 MT status: OK — smart scrape"))
-    else:
-        lines.append(escape("📡 MT status: not checked (targeted run)"))
+    # --- Scrape Plan ---
+    if scrape_plan and hasattr(scrape_plan, "plans"):
+        plan_parts = []
+        for p in scrape_plan.plans:
+            icon = {"full_sync": "🔄", "score_sync": "🎯", "skip": "⏭️"}.get(p.action.value, "•")
+            plan_parts.append(f"  {icon} {escape(p.target_label)}: {escape(p.reason)}")
+        if mt_status.startswith("failed:"):
+            lines.append(escape("⚠️ MT status FAILED — full-season fallback"))
+        elif scrape_plan.is_weekly_sync:
+            lines.append(escape("📡 Weekly full sync (Monday)"))
+        else:
+            skipped = sum(1 for p in scrape_plan.plans if p.action.value == "skip")
+            active = len(scrape_plan.plans) - skipped
+            lines.append(escape(f"📡 Smart scrape: {active} active, {skipped} skipped"))
+        for part in plan_parts:
+            lines.append(part)
+    elif mt_status.startswith("failed:"):
+        lines.append(escape("⚠️ MT status FAILED — full-season fallback"))
+    elif target:
+        lines.append(escape("📡 Targeted run (no plan)"))
     lines.append("")
 
     # --- Actions Taken ---
