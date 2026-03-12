@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from agent.planner import (
     RunPlan,
@@ -47,23 +47,23 @@ def _mt_target(
 class TestIsWeeklySyncRun:
     def test_monday_0200_utc(self):
         # Monday March 9 2026 02:00 UTC
-        dt = datetime(2026, 3, 9, 2, 0, tzinfo=timezone.utc)
+        dt = datetime(2026, 3, 9, 2, 0, tzinfo=UTC)
         assert is_weekly_sync_run(dt) is True
 
     def test_monday_0300_utc(self):
-        dt = datetime(2026, 3, 9, 3, 0, tzinfo=timezone.utc)
+        dt = datetime(2026, 3, 9, 3, 0, tzinfo=UTC)
         assert is_weekly_sync_run(dt) is True
 
     def test_monday_0800_utc(self):
-        dt = datetime(2026, 3, 9, 8, 0, tzinfo=timezone.utc)
+        dt = datetime(2026, 3, 9, 8, 0, tzinfo=UTC)
         assert is_weekly_sync_run(dt) is False
 
     def test_tuesday_0200_utc(self):
-        dt = datetime(2026, 3, 10, 2, 0, tzinfo=timezone.utc)
+        dt = datetime(2026, 3, 10, 2, 0, tzinfo=UTC)
         assert is_weekly_sync_run(dt) is False
 
     def test_thursday_1400_utc(self):
-        dt = datetime(2026, 3, 12, 14, 0, tzinfo=timezone.utc)
+        dt = datetime(2026, 3, 12, 14, 0, tzinfo=UTC)
         assert is_weekly_sync_run(dt) is False
 
 
@@ -74,7 +74,13 @@ class TestComputeScrapePlan:
             _mt_target("U13", "Homegrown", "Northeast", total=100, last_played_date="2026-03-08"),
             _mt_target("U14", "Academy", "New England", total=99, last_played_date="2026-03-07"),
         ]
-        plan = compute_scrape_plan(mt_targets, SAMPLE_CONFIGS, date(2026, 3, 12), SEASON_END, False)
+        plan = compute_scrape_plan(
+            mt_targets,
+            SAMPLE_CONFIGS,
+            date(2026, 3, 12),
+            SEASON_END,
+            False,
+        )
 
         assert len(plan.plans) == 3  # excludes u14-hg-ifa
         for p in plan.plans:
@@ -84,13 +90,23 @@ class TestComputeScrapePlan:
     def test_needs_score_triggers_score_sync(self):
         mt_targets = [
             _mt_target(
-                "U14", "Homegrown", "Northeast",
-                total=105, needs_score=3, last_played_date="2026-03-08",
+                "U14",
+                "Homegrown",
+                "Northeast",
+                total=105,
+                needs_score=3,
+                last_played_date="2026-03-08",
             ),
             _mt_target("U13", "Homegrown", "Northeast", total=100, last_played_date="2026-03-08"),
             _mt_target("U14", "Academy", "New England", total=99),
         ]
-        plan = compute_scrape_plan(mt_targets, SAMPLE_CONFIGS, date(2026, 3, 12), SEASON_END, False)
+        plan = compute_scrape_plan(
+            mt_targets,
+            SAMPLE_CONFIGS,
+            date(2026, 3, 12),
+            SEASON_END,
+            False,
+        )
 
         u14 = next(p for p in plan.plans if p.target_key == "u14-hg")
         assert u14.action == ScrapeAction.SCORE_SYNC
@@ -103,7 +119,13 @@ class TestComputeScrapePlan:
         mt_targets = [
             _mt_target("U14", "Homegrown", "Northeast", total=105, last_played_date="2026-03-08"),
         ]
-        plan = compute_scrape_plan(mt_targets, SAMPLE_CONFIGS, date(2026, 3, 12), SEASON_END, False)
+        plan = compute_scrape_plan(
+            mt_targets,
+            SAMPLE_CONFIGS,
+            date(2026, 3, 12),
+            SEASON_END,
+            False,
+        )
 
         u13 = next(p for p in plan.plans if p.target_key == "u13-hg")
         assert u13.action == ScrapeAction.FULL_SYNC
@@ -116,7 +138,13 @@ class TestComputeScrapePlan:
         mt_targets = [
             _mt_target("U14", "Homegrown", "Northeast", total=0),
         ]
-        plan = compute_scrape_plan(mt_targets, SAMPLE_CONFIGS, date(2026, 3, 12), SEASON_END, False)
+        plan = compute_scrape_plan(
+            mt_targets,
+            SAMPLE_CONFIGS,
+            date(2026, 3, 12),
+            SEASON_END,
+            False,
+        )
 
         u14 = next(p for p in plan.plans if p.target_key == "u14-hg")
         assert u14.action == ScrapeAction.FULL_SYNC
@@ -150,7 +178,13 @@ class TestComputeScrapePlan:
         mt_targets = [
             _mt_target("U14", "Academy", "New England", total=99, last_played_date="2026-03-07"),
         ]
-        plan = compute_scrape_plan(mt_targets, SAMPLE_CONFIGS, date(2026, 3, 12), SEASON_END, False)
+        plan = compute_scrape_plan(
+            mt_targets,
+            SAMPLE_CONFIGS,
+            date(2026, 3, 12),
+            SEASON_END,
+            False,
+        )
 
         academy = next(p for p in plan.plans if p.target_key == "u14-academy")
         assert academy.action == ScrapeAction.SKIP
@@ -158,19 +192,23 @@ class TestComputeScrapePlan:
 
 class TestFormatPlanPrompt:
     def test_contains_scrape_params(self):
-        plan = RunPlan(plans=[
-            {
-                "target_key": "u14-hg",
-                "target_label": "U14 Homegrown Northeast",
-                "action": ScrapeAction.FULL_SYNC,
-                "start_date": date(2026, 3, 12),
-                "end_date": date(2026, 6, 30),
-                "reason": "No matches in MT",
-                "scraper_params": {
-                    "age_group": "U14", "league": "Homegrown", "division": "Northeast",
+        plan = RunPlan(
+            plans=[
+                {
+                    "target_key": "u14-hg",
+                    "target_label": "U14 Homegrown Northeast",
+                    "action": ScrapeAction.FULL_SYNC,
+                    "start_date": date(2026, 3, 12),
+                    "end_date": date(2026, 6, 30),
+                    "reason": "No matches in MT",
+                    "scraper_params": {
+                        "age_group": "U14",
+                        "league": "Homegrown",
+                        "division": "Northeast",
+                    },
                 },
-            },
-        ])
+            ]
+        )
         prompt = format_plan_prompt(plan)
         assert 'age_group="U14"' in prompt
         assert 'division="Northeast"' in prompt
@@ -178,15 +216,17 @@ class TestFormatPlanPrompt:
         assert "submit_matches()" in prompt
 
     def test_skip_shows_reason(self):
-        plan = RunPlan(plans=[
-            {
-                "target_key": "u14-hg",
-                "target_label": "U14 Homegrown Northeast",
-                "action": ScrapeAction.SKIP,
-                "reason": "Up to date (105 matches)",
-                "scraper_params": {},
-            },
-        ])
+        plan = RunPlan(
+            plans=[
+                {
+                    "target_key": "u14-hg",
+                    "target_label": "U14 Homegrown Northeast",
+                    "action": ScrapeAction.SKIP,
+                    "reason": "Up to date (105 matches)",
+                    "scraper_params": {},
+                },
+            ]
+        )
         prompt = format_plan_prompt(plan)
         assert "SKIP" in prompt
         assert "Up to date" in prompt
