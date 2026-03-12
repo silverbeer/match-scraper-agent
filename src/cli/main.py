@@ -203,6 +203,7 @@ def _send_telegram_report(
         env=env,
         target=target,
         dry_run=deps.dry_run,
+        mt_status=deps._mt_status,
     )
 
     try:

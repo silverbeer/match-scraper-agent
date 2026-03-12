@@ -26,6 +26,7 @@ def build_report(
     env: str,
     target: str | None,
     dry_run: bool,
+    mt_status: str = "",
     now: datetime | None = None,
 ) -> str:
     """Build a MarkdownV2-formatted run summary report.
@@ -65,6 +66,16 @@ def build_report(
     # --- Agent Awareness ---
     awareness = _agent_awareness(now, scraped_matches)
     lines.append(awareness)
+
+    # --- MT Status ---
+    if mt_status.startswith("failed:"):
+        reason = escape(mt_status.removeprefix("failed:"))
+        lines.append(escape("⚠️ MT status check FAILED — full-season scrape fallback"))
+        lines.append(f"  _{reason}_")
+    elif mt_status == "ok":
+        lines.append(escape("📡 MT status: OK — smart scrape"))
+    else:
+        lines.append(escape("📡 MT status: not checked (targeted run)"))
     lines.append("")
 
     # --- Actions Taken ---

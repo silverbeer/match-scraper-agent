@@ -74,6 +74,7 @@ async def get_match_status(ctx: RunContext[AgentDeps]) -> str:
             data = resp.json()
     except Exception as exc:
         logger.warning("tool.get_match_status.failed", error=str(exc))
+        ctx.deps._mt_status = f"failed:{exc}"
         return "Could not reach MT backend. Falling back to full-season scrape."
 
     targets = data.get("targets", [])
@@ -106,6 +107,7 @@ async def get_match_status(ctx: RunContext[AgentDeps]) -> str:
 
         lines.append(line)
 
+    ctx.deps._mt_status = "ok"
     logger.info("tool.get_match_status.done", target_count=len(targets))
     return "\n".join(lines)
 
