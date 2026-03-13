@@ -375,9 +375,8 @@ def run(
                 compute_scrape_plan,
                 fetch_mt_status,
                 format_plan_prompt,
-                is_weekly_sync_run,
             )
-            from agent.tools import SEASON_END, _current_season
+            from agent.tools import _current_season
 
             now_utc = datetime.now(tz=UTC)
             mt_targets, mt_status_str = fetch_mt_status(
@@ -387,22 +386,21 @@ def run(
             )
             deps._mt_status = mt_status_str
 
-            weekly = is_weekly_sync_run(now_utc)
             plan = compute_scrape_plan(
                 mt_targets=mt_targets,
                 target_configs=_TARGET_SCRAPER_CONFIG,
-                today=now_utc.date(),
-                season_end=SEASON_END,
-                is_weekly=weekly,
+                now=now_utc,
             )
             deps._scrape_plan = plan
 
             logger.info(
                 "planner.computed",
-                weekly=weekly,
+                weekday=now_utc.strftime("%A"),
+                hour_utc=now_utc.hour,
                 mt_status=mt_status_str,
                 full_sync=sum(1 for p in plan.plans if p.action.value == "full_sync"),
                 score_sync=sum(1 for p in plan.plans if p.action.value == "score_sync"),
+                schedule_check=sum(1 for p in plan.plans if p.action.value == "schedule_check"),
                 skip=sum(1 for p in plan.plans if p.action.value == "skip"),
             )
 

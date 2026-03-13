@@ -213,10 +213,15 @@ class TestAgentAwareness:
         result = _agent_awareness(now, matches)
         assert "still awaiting scores" in result
 
-    def test_thursday(self) -> None:
-        now = datetime(2026, 3, 12, 14, 0, tzinfo=UTC)  # Thursday
+    def test_thursday_before_16(self) -> None:
+        now = datetime(2026, 3, 12, 14, 0, tzinfo=UTC)  # Thursday 14:00
         result = _agent_awareness(now, [])
-        assert "routine schedule sync" in result
+        assert "schedule check runs after 16:00 UTC" in result
+
+    def test_thursday_after_16(self) -> None:
+        now = datetime(2026, 3, 12, 20, 0, tzinfo=UTC)  # Thursday 20:00
+        result = _agent_awareness(now, [])
+        assert "checking upcoming schedule" in result
 
 
 class TestIsLastWeekend:

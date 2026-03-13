@@ -72,12 +72,15 @@ def build_report(
     if scrape_plan and hasattr(scrape_plan, "plans"):
         plan_parts = []
         for p in scrape_plan.plans:
-            icon = {"full_sync": "🔄", "score_sync": "🎯", "skip": "⏭️"}.get(p.action.value, "•")
+            icon = {
+                "full_sync": "🔄",
+                "score_sync": "🎯",
+                "schedule_check": "📋",
+                "skip": "⏭️",
+            }.get(p.action.value, "•")
             plan_parts.append(f"  {icon} {escape(p.target_label)}: {escape(p.reason)}")
         if mt_status.startswith("failed:"):
-            lines.append(escape("⚠️ MT status FAILED — full-season fallback"))
-        elif scrape_plan.is_weekly_sync:
-            lines.append(escape("📡 Weekly full sync (Monday)"))
+            lines.append(escape("⚠️ MT status FAILED — fallback scrape"))
         else:
             skipped = sum(1 for p in scrape_plan.plans if p.action.value == "skip")
             active = len(scrape_plan.plans) - skipped
@@ -183,7 +186,9 @@ def _agent_awareness(now: datetime, matches: list[dict[str, Any]]) -> str:
         return escape("🧠 Mid-week — no recent weekend matches found")
 
     # Thu/Fri
-    return escape("🧠 No recent match activity — routine schedule sync")
+    if now.hour >= 16:
+        return escape("🧠 Pre-weekend — checking upcoming schedule")
+    return escape("🧠 Pre-weekend — schedule check runs after 16:00 UTC")
 
 
 def _is_last_weekend(match_date: str, now: datetime) -> bool:

@@ -1,4 +1,12 @@
-"""Deterministic scrape planner — replaces LLM decision-making."""
+"""Deterministic scrape planner — day-of-week aware strategy.
+
+Schedule logic:
+  Mon-Wed: Score sync (Fri→Mon window) if scores are missing, else skip.
+  Thu-Fri: Schedule check for upcoming weekend (after 16 UTC), else skip.
+  Sat-Sun: Score sync (Fri→Mon window) — always scrape, scores are posting.
+
+All scrapes use tight Friday-to-Monday windows. No full-season scrapes.
+"""
 
 from __future__ import annotations
 
@@ -11,13 +19,14 @@ from pydantic import BaseModel
 
 logger = structlog.get_logger()
 
-# Score-sync lookback: scrape this many days before the earliest unscored match
-_SCORE_SYNC_LOOKBACK_DAYS = 3
+# Hour threshold for Thu/Fri schedule checks (UTC)
+_SCHEDULE_CHECK_HOUR = 16
 
 
 class ScrapeAction(StrEnum):
     FULL_SYNC = "full_sync"
     SCORE_SYNC = "score_sync"
+    SCHEDULE_CHECK = "schedule_check"
     SKIP = "skip"
 
 
@@ -41,9 +50,26 @@ class RunPlan(BaseModel):
     mt_api_status: str = ""  # "ok", "failed:<reason>", "empty"
 
 
-def is_weekly_sync_run(now: datetime) -> bool:
-    """Monday 02:00-03:00 UTC = weekly full sync window."""
-    return now.weekday() == 0 and now.hour in (2, 3)
+def _weekend_window(today: date) -> tuple[date, date]:
+    """Compute the Friday-to-Monday window for the relevant weekend.
+
+    Mon-Wed: last weekend (previous Fri→Mon).
+    Thu-Fri: upcoming weekend (next Fri→Mon).
+    Sat-Sun: current weekend (this Fri→Mon).
+    """
+    wd = today.weekday()  # 0=Mon, 6=Sun
+
+    if wd in (0, 1, 2):  # Mon-Wed → last weekend
+        friday = today - timedelta(days=wd + 3)
+        monday = today - timedelta(days=wd)
+    elif wd in (3, 4):  # Thu-Fri → upcoming weekend
+        friday = today + timedelta(days=4 - wd)
+        monday = friday + timedelta(days=3)
+    else:  # Sat-Sun → current weekend
+        friday = today - timedelta(days=wd - 4)
+        monday = friday + timedelta(days=3)
+
+    return friday, monday
 
 
 def _target_label(cfg: dict[str, str]) -> str:
@@ -109,19 +135,20 @@ def fetch_mt_status(
 def compute_scrape_plan(
     mt_targets: list[dict[str, Any]],
     target_configs: dict[str, dict[str, str]],
-    today: date,
-    season_end: date,
-    is_weekly: bool,
+    now: datetime,
 ) -> RunPlan:
-    """Compute a deterministic scrape plan for all non-IFA targets.
+    """Compute a day-of-week aware scrape plan for all non-IFA targets.
 
     Args:
         mt_targets: Target dicts from the MT API response.
         target_configs: The _TARGET_SCRAPER_CONFIG dict from main.py.
-        today: Today's date.
-        season_end: Season end date (SEASON_END constant).
-        is_weekly: True for the Monday 02:00 UTC weekly full-sync run.
+        now: Current UTC datetime (used for day-of-week and hour).
     """
+    today = now.date()
+    weekday = now.weekday()  # 0=Mon, 6=Sun
+    hour = now.hour
+    friday, monday = _weekend_window(today)
+
     # Build lookup: (age_group, league, division) → MT target data
     mt_lookup: dict[tuple[str, str, str], dict[str, Any]] = {}
     for t in mt_targets:
@@ -137,28 +164,15 @@ def compute_scrape_plan(
         lookup_key = _cfg_key(cfg)
         mt_data = mt_lookup.get(lookup_key)
 
-        if is_weekly:
-            plans.append(
-                ScrapePlan(
-                    target_key=target_key,
-                    target_label=label,
-                    action=ScrapeAction.FULL_SYNC,
-                    start_date=today,
-                    end_date=season_end,
-                    reason="Weekly full sync (Monday)",
-                    scraper_params=cfg,
-                )
-            )
-            continue
-
+        # Safety net: MT has no data for this division
         if mt_data is None or mt_data.get("total", 0) == 0:
             plans.append(
                 ScrapePlan(
                     target_key=target_key,
                     target_label=label,
                     action=ScrapeAction.FULL_SYNC,
-                    start_date=today,
-                    end_date=season_end,
+                    start_date=friday,
+                    end_date=monday,
                     reason="No matches in MT — needs initial sync",
                     scraper_params=cfg,
                 )
@@ -166,45 +180,72 @@ def compute_scrape_plan(
             continue
 
         needs_score = mt_data.get("needs_score", 0)
-        if needs_score > 0:
-            last_played = mt_data.get("last_played_date")
-            if last_played:
-                try:
-                    lp = date.fromisoformat(last_played)
-                    start = lp - timedelta(days=_SCORE_SYNC_LOOKBACK_DAYS)
-                except ValueError:
-                    start = today
-            else:
-                start = today
+        total = mt_data.get("total", 0)
+        last_played = mt_data.get("last_played_date", "none")
 
+        if weekday in (0, 1, 2):  # Mon-Wed: score focus
+            if needs_score > 0:
+                plans.append(
+                    ScrapePlan(
+                        target_key=target_key,
+                        target_label=label,
+                        action=ScrapeAction.SCORE_SYNC,
+                        start_date=friday,
+                        end_date=monday,
+                        reason=f"{needs_score} match(es) awaiting scores",
+                        scraper_params=cfg,
+                    )
+                )
+            else:
+                plans.append(
+                    ScrapePlan(
+                        target_key=target_key,
+                        target_label=label,
+                        action=ScrapeAction.SKIP,
+                        reason=f"Up to date ({total} matches, last played {last_played})",
+                        scraper_params=cfg,
+                    )
+                )
+
+        elif weekday in (3, 4):  # Thu-Fri: schedule check
+            if hour < _SCHEDULE_CHECK_HOUR:
+                plans.append(
+                    ScrapePlan(
+                        target_key=target_key,
+                        target_label=label,
+                        action=ScrapeAction.SKIP,
+                        reason=f"Schedule check runs after {_SCHEDULE_CHECK_HOUR}:00 UTC",
+                        scraper_params=cfg,
+                    )
+                )
+            else:
+                plans.append(
+                    ScrapePlan(
+                        target_key=target_key,
+                        target_label=label,
+                        action=ScrapeAction.SCHEDULE_CHECK,
+                        start_date=friday,
+                        end_date=monday,
+                        reason="Checking upcoming weekend schedule",
+                        scraper_params=cfg,
+                    )
+                )
+
+        else:  # Sat-Sun: score focus, always scrape
             plans.append(
                 ScrapePlan(
                     target_key=target_key,
                     target_label=label,
                     action=ScrapeAction.SCORE_SYNC,
-                    start_date=start,
-                    end_date=season_end,
-                    reason=f"{needs_score} match(es) awaiting scores",
+                    start_date=friday,
+                    end_date=monday,
+                    reason=f"Weekend score sync ({needs_score} awaiting scores)",
                     scraper_params=cfg,
                 )
             )
-            continue
-
-        # Fully up to date
-        total = mt_data.get("total", 0)
-        last_played = mt_data.get("last_played_date", "none")
-        plans.append(
-            ScrapePlan(
-                target_key=target_key,
-                target_label=label,
-                action=ScrapeAction.SKIP,
-                reason=f"Up to date ({total} matches, last played {last_played})",
-                scraper_params=cfg,
-            )
-        )
 
     mt_status = "ok" if mt_targets else ("empty" if mt_targets is not None else "failed")
-    return RunPlan(plans=plans, is_weekly_sync=is_weekly, mt_api_status=mt_status)
+    return RunPlan(plans=plans, mt_api_status=mt_status)
 
 
 def format_plan_prompt(plan: RunPlan) -> str:
@@ -226,7 +267,12 @@ def format_plan_prompt(plan: RunPlan) -> str:
             lines.append("")
             continue
 
-        action_label = "FULL SYNC" if p.action == ScrapeAction.FULL_SYNC else "SCORE SYNC"
+        action_labels = {
+            ScrapeAction.FULL_SYNC: "FULL SYNC",
+            ScrapeAction.SCORE_SYNC: "SCORE SYNC",
+            ScrapeAction.SCHEDULE_CHECK: "SCHEDULE CHECK",
+        }
+        action_label = action_labels.get(p.action, p.action.value.upper())
         lines.append(f"{step}. **{p.target_label}: {action_label}**")
         lines.append(f"   Reason: {p.reason}")
 

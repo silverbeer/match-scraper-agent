@@ -1,4 +1,4 @@
-"""Tests for the deterministic scrape planner."""
+"""Tests for the day-of-week aware scrape planner."""
 
 from __future__ import annotations
 
@@ -7,12 +7,11 @@ from datetime import UTC, date, datetime
 from agent.planner import (
     RunPlan,
     ScrapeAction,
+    ScrapePlan,
+    _weekend_window,
     compute_scrape_plan,
     format_plan_prompt,
-    is_weekly_sync_run,
 )
-
-SEASON_END = date(2026, 6, 30)
 
 # Minimal target configs (mirrors _TARGET_SCRAPER_CONFIG without IFA entries)
 SAMPLE_CONFIGS = {
@@ -44,51 +43,55 @@ def _mt_target(
     }
 
 
-class TestIsWeeklySyncRun:
-    def test_monday_0200_utc(self):
-        # Monday March 9 2026 02:00 UTC
-        dt = datetime(2026, 3, 9, 2, 0, tzinfo=UTC)
-        assert is_weekly_sync_run(dt) is True
+class TestWeekendWindow:
+    def test_monday(self):
+        fri, mon = _weekend_window(date(2026, 3, 9))  # Monday
+        assert fri == date(2026, 3, 6)  # Last Friday
+        assert mon == date(2026, 3, 9)  # Today (Monday)
 
-    def test_monday_0300_utc(self):
-        dt = datetime(2026, 3, 9, 3, 0, tzinfo=UTC)
-        assert is_weekly_sync_run(dt) is True
+    def test_tuesday(self):
+        fri, mon = _weekend_window(date(2026, 3, 10))  # Tuesday
+        assert fri == date(2026, 3, 6)
+        assert mon == date(2026, 3, 9)
 
-    def test_monday_0800_utc(self):
-        dt = datetime(2026, 3, 9, 8, 0, tzinfo=UTC)
-        assert is_weekly_sync_run(dt) is False
+    def test_wednesday(self):
+        fri, mon = _weekend_window(date(2026, 3, 11))  # Wednesday
+        assert fri == date(2026, 3, 6)
+        assert mon == date(2026, 3, 9)
 
-    def test_tuesday_0200_utc(self):
-        dt = datetime(2026, 3, 10, 2, 0, tzinfo=UTC)
-        assert is_weekly_sync_run(dt) is False
+    def test_thursday(self):
+        fri, mon = _weekend_window(date(2026, 3, 12))  # Thursday
+        assert fri == date(2026, 3, 13)  # Upcoming Friday
+        assert mon == date(2026, 3, 16)  # Upcoming Monday
 
-    def test_thursday_1400_utc(self):
-        dt = datetime(2026, 3, 12, 14, 0, tzinfo=UTC)
-        assert is_weekly_sync_run(dt) is False
+    def test_friday(self):
+        fri, mon = _weekend_window(date(2026, 3, 13))  # Friday
+        assert fri == date(2026, 3, 13)  # Today
+        assert mon == date(2026, 3, 16)
+
+    def test_saturday(self):
+        fri, mon = _weekend_window(date(2026, 3, 14))  # Saturday
+        assert fri == date(2026, 3, 13)  # Yesterday (Friday)
+        assert mon == date(2026, 3, 16)
+
+    def test_sunday(self):
+        fri, mon = _weekend_window(date(2026, 3, 15))  # Sunday
+        assert fri == date(2026, 3, 13)
+        assert mon == date(2026, 3, 16)
 
 
 class TestComputeScrapePlan:
-    def test_all_targets_up_to_date_skips(self):
-        mt_targets = [
+    """Test day-of-week scrape planning logic."""
+
+    def _all_scored_mt(self):
+        return [
             _mt_target("U14", "Homegrown", "Northeast", total=105, last_played_date="2026-03-08"),
             _mt_target("U13", "Homegrown", "Northeast", total=100, last_played_date="2026-03-08"),
             _mt_target("U14", "Academy", "New England", total=99, last_played_date="2026-03-07"),
         ]
-        plan = compute_scrape_plan(
-            mt_targets,
-            SAMPLE_CONFIGS,
-            date(2026, 3, 12),
-            SEASON_END,
-            False,
-        )
 
-        assert len(plan.plans) == 3  # excludes u14-hg-ifa
-        for p in plan.plans:
-            assert p.action == ScrapeAction.SKIP
-            assert "Up to date" in p.reason
-
-    def test_needs_score_triggers_score_sync(self):
-        mt_targets = [
+    def _some_unscored_mt(self):
+        return [
             _mt_target(
                 "U14",
                 "Homegrown",
@@ -98,93 +101,130 @@ class TestComputeScrapePlan:
                 last_played_date="2026-03-08",
             ),
             _mt_target("U13", "Homegrown", "Northeast", total=100, last_played_date="2026-03-08"),
-            _mt_target("U14", "Academy", "New England", total=99),
+            _mt_target("U14", "Academy", "New England", total=99, last_played_date="2026-03-07"),
         ]
-        plan = compute_scrape_plan(
-            mt_targets,
-            SAMPLE_CONFIGS,
-            date(2026, 3, 12),
-            SEASON_END,
-            False,
-        )
+
+    # --- Mon-Wed: score focus ---
+
+    def test_monday_all_scored_skips(self):
+        now = datetime(2026, 3, 9, 8, 0, tzinfo=UTC)  # Monday 08:00
+        plan = compute_scrape_plan(self._all_scored_mt(), SAMPLE_CONFIGS, now)
+
+        assert len(plan.plans) == 3  # excludes IFA
+        for p in plan.plans:
+            assert p.action == ScrapeAction.SKIP
+            assert "Up to date" in p.reason
+
+    def test_tuesday_needs_score_triggers_score_sync(self):
+        now = datetime(2026, 3, 10, 14, 0, tzinfo=UTC)  # Tuesday 14:00
+        plan = compute_scrape_plan(self._some_unscored_mt(), SAMPLE_CONFIGS, now)
 
         u14 = next(p for p in plan.plans if p.target_key == "u14-hg")
         assert u14.action == ScrapeAction.SCORE_SYNC
-        assert u14.start_date == date(2026, 3, 5)  # 3 days before last_played
-        assert u14.end_date == SEASON_END
+        assert u14.start_date == date(2026, 3, 6)  # Friday
+        assert u14.end_date == date(2026, 3, 9)  # Monday
         assert "3 match(es) awaiting scores" in u14.reason
 
+        # Others are up to date → skip
+        u13 = next(p for p in plan.plans if p.target_key == "u13-hg")
+        assert u13.action == ScrapeAction.SKIP
+
+    def test_wednesday_all_scored_skips(self):
+        now = datetime(2026, 3, 11, 2, 0, tzinfo=UTC)  # Wednesday 02:00
+        plan = compute_scrape_plan(self._all_scored_mt(), SAMPLE_CONFIGS, now)
+        for p in plan.plans:
+            assert p.action == ScrapeAction.SKIP
+
+    # --- Thu-Fri: schedule check ---
+
+    def test_thursday_before_16_utc_skips(self):
+        now = datetime(2026, 3, 12, 8, 0, tzinfo=UTC)  # Thursday 08:00
+        plan = compute_scrape_plan(self._all_scored_mt(), SAMPLE_CONFIGS, now)
+        for p in plan.plans:
+            assert p.action == ScrapeAction.SKIP
+            assert "16" in p.reason
+
+    def test_thursday_after_16_utc_schedule_check(self):
+        now = datetime(2026, 3, 12, 20, 0, tzinfo=UTC)  # Thursday 20:00
+        plan = compute_scrape_plan(self._all_scored_mt(), SAMPLE_CONFIGS, now)
+        for p in plan.plans:
+            assert p.action == ScrapeAction.SCHEDULE_CHECK
+            assert p.start_date == date(2026, 3, 13)  # Upcoming Friday
+            assert p.end_date == date(2026, 3, 16)  # Upcoming Monday
+
+    def test_friday_at_16_utc_schedule_check(self):
+        now = datetime(2026, 3, 13, 16, 0, tzinfo=UTC)  # Friday 16:00
+        plan = compute_scrape_plan(self._all_scored_mt(), SAMPLE_CONFIGS, now)
+        for p in plan.plans:
+            assert p.action == ScrapeAction.SCHEDULE_CHECK
+            assert p.start_date == date(2026, 3, 13)  # Today (Friday)
+            assert p.end_date == date(2026, 3, 16)
+
+    def test_friday_before_16_utc_skips(self):
+        now = datetime(2026, 3, 13, 14, 0, tzinfo=UTC)  # Friday 14:00
+        plan = compute_scrape_plan(self._all_scored_mt(), SAMPLE_CONFIGS, now)
+        for p in plan.plans:
+            assert p.action == ScrapeAction.SKIP
+
+    # --- Sat-Sun: always score sync ---
+
+    def test_saturday_always_score_syncs(self):
+        now = datetime(2026, 3, 14, 14, 0, tzinfo=UTC)  # Saturday 14:00
+        plan = compute_scrape_plan(self._all_scored_mt(), SAMPLE_CONFIGS, now)
+        for p in plan.plans:
+            assert p.action == ScrapeAction.SCORE_SYNC
+            assert p.start_date == date(2026, 3, 13)  # Friday
+            assert p.end_date == date(2026, 3, 16)  # Monday
+
+    def test_sunday_always_score_syncs(self):
+        now = datetime(2026, 3, 15, 8, 0, tzinfo=UTC)  # Sunday 08:00
+        plan = compute_scrape_plan(self._all_scored_mt(), SAMPLE_CONFIGS, now)
+        for p in plan.plans:
+            assert p.action == ScrapeAction.SCORE_SYNC
+
+    # --- Edge cases ---
+
     def test_missing_from_mt_triggers_full_sync(self):
-        # Only U14 HG exists in MT, U13 and Academy are missing
         mt_targets = [
             _mt_target("U14", "Homegrown", "Northeast", total=105, last_played_date="2026-03-08"),
         ]
-        plan = compute_scrape_plan(
-            mt_targets,
-            SAMPLE_CONFIGS,
-            date(2026, 3, 12),
-            SEASON_END,
-            False,
-        )
+        now = datetime(2026, 3, 10, 8, 0, tzinfo=UTC)  # Tuesday
+        plan = compute_scrape_plan(mt_targets, SAMPLE_CONFIGS, now)
 
         u13 = next(p for p in plan.plans if p.target_key == "u13-hg")
         assert u13.action == ScrapeAction.FULL_SYNC
         assert "No matches in MT" in u13.reason
-
-        academy = next(p for p in plan.plans if p.target_key == "u14-academy")
-        assert academy.action == ScrapeAction.FULL_SYNC
+        assert u13.start_date == date(2026, 3, 6)  # Uses weekend window
+        assert u13.end_date == date(2026, 3, 9)
 
     def test_zero_total_triggers_full_sync(self):
         mt_targets = [
             _mt_target("U14", "Homegrown", "Northeast", total=0),
         ]
-        plan = compute_scrape_plan(
-            mt_targets,
-            SAMPLE_CONFIGS,
-            date(2026, 3, 12),
-            SEASON_END,
-            False,
-        )
+        now = datetime(2026, 3, 14, 8, 0, tzinfo=UTC)  # Saturday
+        plan = compute_scrape_plan(mt_targets, SAMPLE_CONFIGS, now)
 
         u14 = next(p for p in plan.plans if p.target_key == "u14-hg")
         assert u14.action == ScrapeAction.FULL_SYNC
 
-    def test_weekly_sync_overrides_all(self):
-        mt_targets = [
-            _mt_target("U14", "Homegrown", "Northeast", total=105, last_played_date="2026-03-08"),
-            _mt_target("U13", "Homegrown", "Northeast", total=100, last_played_date="2026-03-08"),
-            _mt_target("U14", "Academy", "New England", total=99, last_played_date="2026-03-07"),
-        ]
-        plan = compute_scrape_plan(mt_targets, SAMPLE_CONFIGS, date(2026, 3, 9), SEASON_END, True)
-
-        assert plan.is_weekly_sync is True
-        for p in plan.plans:
-            assert p.action == ScrapeAction.FULL_SYNC
-            assert "Weekly" in p.reason
-
     def test_empty_mt_response_full_sync_all(self):
-        plan = compute_scrape_plan([], SAMPLE_CONFIGS, date(2026, 3, 12), SEASON_END, False)
-
+        now = datetime(2026, 3, 12, 8, 0, tzinfo=UTC)  # Thursday
+        plan = compute_scrape_plan([], SAMPLE_CONFIGS, now)
         for p in plan.plans:
             assert p.action == ScrapeAction.FULL_SYNC
 
     def test_ifa_targets_excluded(self):
-        plan = compute_scrape_plan([], SAMPLE_CONFIGS, date(2026, 3, 12), SEASON_END, False)
+        now = datetime(2026, 3, 12, 8, 0, tzinfo=UTC)
+        plan = compute_scrape_plan([], SAMPLE_CONFIGS, now)
         keys = [p.target_key for p in plan.plans]
         assert "u14-hg-ifa" not in keys
 
     def test_academy_conference_mapping(self):
-        """Academy targets use conference in config but division in MT response."""
         mt_targets = [
             _mt_target("U14", "Academy", "New England", total=99, last_played_date="2026-03-07"),
         ]
-        plan = compute_scrape_plan(
-            mt_targets,
-            SAMPLE_CONFIGS,
-            date(2026, 3, 12),
-            SEASON_END,
-            False,
-        )
+        now = datetime(2026, 3, 9, 8, 0, tzinfo=UTC)  # Monday
+        plan = compute_scrape_plan(mt_targets, SAMPLE_CONFIGS, now)
 
         academy = next(p for p in plan.plans if p.target_key == "u14-academy")
         assert academy.action == ScrapeAction.SKIP
@@ -194,19 +234,19 @@ class TestFormatPlanPrompt:
     def test_contains_scrape_params(self):
         plan = RunPlan(
             plans=[
-                {
-                    "target_key": "u14-hg",
-                    "target_label": "U14 Homegrown Northeast",
-                    "action": ScrapeAction.FULL_SYNC,
-                    "start_date": date(2026, 3, 12),
-                    "end_date": date(2026, 6, 30),
-                    "reason": "No matches in MT",
-                    "scraper_params": {
+                ScrapePlan(
+                    target_key="u14-hg",
+                    target_label="U14 Homegrown Northeast",
+                    action=ScrapeAction.SCORE_SYNC,
+                    start_date=date(2026, 3, 6),
+                    end_date=date(2026, 3, 9),
+                    reason="3 match(es) awaiting scores",
+                    scraper_params={
                         "age_group": "U14",
                         "league": "Homegrown",
                         "division": "Northeast",
                     },
-                },
+                ),
             ]
         )
         prompt = format_plan_prompt(plan)
@@ -214,17 +254,41 @@ class TestFormatPlanPrompt:
         assert 'division="Northeast"' in prompt
         assert "scrape_matches(" in prompt
         assert "submit_matches()" in prompt
+        assert "SCORE SYNC" in prompt
+
+    def test_schedule_check_format(self):
+        plan = RunPlan(
+            plans=[
+                ScrapePlan(
+                    target_key="u14-hg",
+                    target_label="U14 Homegrown Northeast",
+                    action=ScrapeAction.SCHEDULE_CHECK,
+                    start_date=date(2026, 3, 13),
+                    end_date=date(2026, 3, 16),
+                    reason="Checking upcoming weekend schedule",
+                    scraper_params={
+                        "age_group": "U14",
+                        "league": "Homegrown",
+                        "division": "Northeast",
+                    },
+                ),
+            ]
+        )
+        prompt = format_plan_prompt(plan)
+        assert "SCHEDULE CHECK" in prompt
+        assert "2026-03-13" in prompt
+        assert "2026-03-16" in prompt
 
     def test_skip_shows_reason(self):
         plan = RunPlan(
             plans=[
-                {
-                    "target_key": "u14-hg",
-                    "target_label": "U14 Homegrown Northeast",
-                    "action": ScrapeAction.SKIP,
-                    "reason": "Up to date (105 matches)",
-                    "scraper_params": {},
-                },
+                ScrapePlan(
+                    target_key="u14-hg",
+                    target_label="U14 Homegrown Northeast",
+                    action=ScrapeAction.SKIP,
+                    reason="Up to date (105 matches)",
+                    scraper_params={},
+                ),
             ]
         )
         prompt = format_plan_prompt(plan)

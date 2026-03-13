@@ -148,16 +148,6 @@ async def scrape_matches(
     settings = ctx.deps.settings
     parsed_start = date.fromisoformat(start_date)
     parsed_end = date.fromisoformat(end_date)
-
-    # Guarantee the end date covers the full season regardless of what the LLM passes
-    if parsed_end < SEASON_END:
-        logger.info(
-            "tool.scrape_matches.extend_end_date",
-            requested=end_date,
-            enforced=SEASON_END.isoformat(),
-        )
-        parsed_end = SEASON_END
-
     look_back = (parsed_end - parsed_start).days
 
     config = ScrapingConfig(
