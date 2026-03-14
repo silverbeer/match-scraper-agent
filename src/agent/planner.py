@@ -11,9 +11,6 @@ from pydantic import BaseModel
 
 logger = structlog.get_logger()
 
-# Score-sync lookback: scrape this many days before the earliest unscored match
-_SCORE_SYNC_LOOKBACK_DAYS = 3
-
 # Kickoff-sync lookahead: check matches within this many days for missing kick-off times
 _KICKOFF_LOOKAHEAD_DAYS = 14
 
@@ -57,6 +54,24 @@ def _target_label(cfg: dict[str, str]) -> str:
     if cfg.get("conference"):
         return f"{ag} {league} {cfg['conference']}"
     return f"{ag} {league} {cfg.get('division', '?')}"
+
+
+def _match_weekend_window(today: date) -> tuple[date, date]:
+    """Return the Fri–Mon window around the most recent match weekend.
+
+    Matches are played Saturday/Sunday; scores post Monday/Tuesday.
+    This window captures the relevant matches without re-scraping the
+    entire remaining season.
+
+    Returns:
+        (friday, monday) dates bracketing the match weekend.
+    """
+    weekday = today.weekday()  # 0=Mon … 6=Sun
+    # Days since last Friday (Fri=4)
+    days_since_fri = (weekday - 4) % 7
+    friday = today - timedelta(days=days_since_fri)
+    monday = friday + timedelta(days=3)
+    return friday, monday
 
 
 def _mt_key(age_group: str, league: str, division: str) -> tuple[str, str, str]:
@@ -173,15 +188,7 @@ def compute_scrape_plan(
         needs_kickoff = mt_data.get("needs_kickoff", 0)
 
         if needs_score > 0:
-            last_played = mt_data.get("last_played_date")
-            if last_played:
-                try:
-                    lp = date.fromisoformat(last_played)
-                    start = lp - timedelta(days=_SCORE_SYNC_LOOKBACK_DAYS)
-                except ValueError:
-                    start = today
-            else:
-                start = today
+            fri, mon = _match_weekend_window(today)
 
             reason_parts = [f"{needs_score} match(es) awaiting scores"]
             if needs_kickoff > 0:
@@ -192,8 +199,8 @@ def compute_scrape_plan(
                     target_key=target_key,
                     target_label=label,
                     action=ScrapeAction.SCORE_SYNC,
-                    start_date=start,
-                    end_date=season_end,
+                    start_date=fri,
+                    end_date=mon,
                     reason=", ".join(reason_parts),
                     scraper_params=cfg,
                 )

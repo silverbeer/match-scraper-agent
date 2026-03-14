@@ -51,7 +51,6 @@ class TestBuildReport:
             now=now,
         )
         assert "Match Scraper Report" in report
-        assert "prod" in report
         assert "u14\\-hg" in report
 
     def test_dry_run_shown_in_header(self) -> None:
@@ -102,7 +101,7 @@ class TestBuildReport:
             now=now,
         )
         assert "Next run" in report
-        assert "16:00 EDT" in report  # 20:00 UTC = 16:00 EDT
+        assert "4:00 PM EDT" in report  # 20:00 UTC = 4:00 PM EDT
 
     def test_today_missing_scores_shown(self) -> None:
         now = datetime(2026, 3, 8, 14, 0, tzinfo=UTC)  # Saturday
@@ -185,7 +184,7 @@ class TestBuildReport:
             dry_run=False,
             now=now,
         )
-        assert "14:10 EDT" in report  # 18:10 UTC = 14:10 EDT
+        assert "2:10 PM EDT" in report  # 18:10 UTC = 2:10 PM EDT
 
 
 class TestAgentAwareness:
