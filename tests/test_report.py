@@ -8,6 +8,7 @@ from utils.report import (
     _agent_awareness,
     _format_delta,
     _is_last_weekend,
+    _missing_kickoff_section,
     _next_scheduled_run,
     _weekend_scores_section,
     build_report,
@@ -21,6 +22,7 @@ def _match(
     status: str = "completed",
     home_score: int | None = 2,
     away_score: int | None = 1,
+    match_time: str | None = "15:00",
 ) -> dict:
     return {
         "home_team": home,
@@ -29,6 +31,7 @@ def _match(
         "match_status": status,
         "home_score": home_score,
         "away_score": away_score,
+        "match_time": match_time,
     }
 
 
@@ -294,3 +297,85 @@ class TestFormatDelta:
         from datetime import timedelta
 
         assert _format_delta(timedelta(minutes=45)) == "45m"
+
+
+class TestMissingKickoff:
+    def test_missing_kickoff_shown(self) -> None:
+        matches = [
+            _match(status="scheduled", home_score=None, away_score=None, match_time=None),
+            _match(
+                home="NYCFC",
+                away="Red Bulls",
+                status="scheduled",
+                home_score=None,
+                away_score=None,
+                match_time=None,
+            ),
+            _match(status="completed", match_time="15:00"),
+        ]
+        lines = _missing_kickoff_section(matches)
+        assert any("Missing Kick\\-off Times" in line for line in lines)
+        assert len(lines) == 3  # header + 2 matches
+
+    def test_no_kickoff_section_when_all_have_times(self) -> None:
+        matches = [
+            _match(status="scheduled", home_score=None, away_score=None, match_time="15:00"),
+            _match(status="completed", match_time="17:00"),
+        ]
+        lines = _missing_kickoff_section(matches)
+        assert lines == []
+
+    def test_no_kickoff_count_in_summary(self) -> None:
+        now = datetime(2026, 3, 8, 14, 0, tzinfo=UTC)
+        matches = [
+            _match(status="scheduled", home_score=None, away_score=None, match_time=None),
+            _match(status="tbd", home_score=None, away_score=None, match_time=None),
+            _match(status="completed", match_time="15:00"),
+        ]
+        report = build_report(
+            result_summary="",
+            actions=[],
+            matches_found=3,
+            matches_submitted=3,
+            scraped_matches=matches,
+            submission_errors=[],
+            env="prod",
+            target=None,
+            dry_run=False,
+            now=now,
+        )
+        assert "no time" in report
+
+    def test_kickoff_plan_icon(self) -> None:
+        from datetime import date
+
+        from agent.planner import RunPlan, ScrapeAction, ScrapePlan
+
+        now = datetime(2026, 3, 12, 14, 0, tzinfo=UTC)
+        plan = RunPlan(
+            plans=[
+                ScrapePlan(
+                    target_key="u14-hg",
+                    target_label="U14 Homegrown Northeast",
+                    action=ScrapeAction.KICKOFF_SYNC,
+                    start_date=date(2026, 3, 12),
+                    end_date=date(2026, 3, 26),
+                    reason="3 missing kick-off times",
+                    scraper_params={},
+                ),
+            ]
+        )
+        report = build_report(
+            result_summary="",
+            actions=[],
+            matches_found=0,
+            matches_submitted=0,
+            scraped_matches=[],
+            submission_errors=[],
+            env="prod",
+            target=None,
+            dry_run=False,
+            scrape_plan=plan,
+            now=now,
+        )
+        assert "⏰" in report

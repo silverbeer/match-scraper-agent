@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from agent.planner import (
+    _KICKOFF_LOOKAHEAD_DAYS,
     RunPlan,
     ScrapeAction,
     compute_scrape_plan,
@@ -30,6 +31,7 @@ def _mt_target(
     division: str,
     total: int = 100,
     needs_score: int = 0,
+    needs_kickoff: int = 0,
     last_played_date: str | None = None,
 ) -> dict:
     return {
@@ -38,6 +40,7 @@ def _mt_target(
         "division": division,
         "total": total,
         "needs_score": needs_score,
+        "needs_kickoff": needs_kickoff,
         "by_status": {"scheduled": total},
         "date_range": {"earliest": "2026-03-01", "latest": "2026-06-28"},
         "last_played_date": last_played_date,
@@ -189,6 +192,102 @@ class TestComputeScrapePlan:
         academy = next(p for p in plan.plans if p.target_key == "u14-academy")
         assert academy.action == ScrapeAction.SKIP
 
+    def test_needs_kickoff_triggers_kickoff_sync(self):
+        mt_targets = [
+            _mt_target(
+                "U14",
+                "Homegrown",
+                "Northeast",
+                total=105,
+                needs_score=0,
+                needs_kickoff=3,
+                last_played_date="2026-03-08",
+            ),
+        ]
+        plan = compute_scrape_plan(
+            mt_targets,
+            SAMPLE_CONFIGS,
+            date(2026, 3, 12),
+            SEASON_END,
+            False,
+        )
+
+        u14 = next(p for p in plan.plans if p.target_key == "u14-hg")
+        assert u14.action == ScrapeAction.KICKOFF_SYNC
+        assert "3 match(es) missing kick-off time" in u14.reason
+
+    def test_kickoff_sync_date_range(self):
+        today = date(2026, 3, 12)
+        mt_targets = [
+            _mt_target(
+                "U14",
+                "Homegrown",
+                "Northeast",
+                total=105,
+                needs_kickoff=2,
+                last_played_date="2026-03-08",
+            ),
+        ]
+        plan = compute_scrape_plan(
+            mt_targets,
+            SAMPLE_CONFIGS,
+            today,
+            SEASON_END,
+            False,
+        )
+
+        u14 = next(p for p in plan.plans if p.target_key == "u14-hg")
+        assert u14.start_date == today
+        assert u14.end_date == today + timedelta(days=_KICKOFF_LOOKAHEAD_DAYS)
+
+    def test_needs_score_and_kickoff_merges(self):
+        mt_targets = [
+            _mt_target(
+                "U14",
+                "Homegrown",
+                "Northeast",
+                total=105,
+                needs_score=3,
+                needs_kickoff=2,
+                last_played_date="2026-03-08",
+            ),
+        ]
+        plan = compute_scrape_plan(
+            mt_targets,
+            SAMPLE_CONFIGS,
+            date(2026, 3, 12),
+            SEASON_END,
+            False,
+        )
+
+        u14 = next(p for p in plan.plans if p.target_key == "u14-hg")
+        assert u14.action == ScrapeAction.SCORE_SYNC
+        assert "awaiting scores" in u14.reason
+        assert "missing kick-off" in u14.reason
+
+    def test_needs_kickoff_zero_skips(self):
+        mt_targets = [
+            _mt_target(
+                "U14",
+                "Homegrown",
+                "Northeast",
+                total=105,
+                needs_score=0,
+                needs_kickoff=0,
+                last_played_date="2026-03-08",
+            ),
+        ]
+        plan = compute_scrape_plan(
+            mt_targets,
+            SAMPLE_CONFIGS,
+            date(2026, 3, 12),
+            SEASON_END,
+            False,
+        )
+
+        u14 = next(p for p in plan.plans if p.target_key == "u14-hg")
+        assert u14.action == ScrapeAction.SKIP
+
 
 class TestFormatPlanPrompt:
     def test_contains_scrape_params(self):
@@ -236,3 +335,25 @@ class TestFormatPlanPrompt:
         plan = RunPlan(plans=[])
         prompt = format_plan_prompt(plan)
         assert "Do NOT call get_match_status()" in prompt
+
+    def test_kickoff_sync_format(self):
+        plan = RunPlan(
+            plans=[
+                {
+                    "target_key": "u14-hg",
+                    "target_label": "U14 Homegrown Northeast",
+                    "action": ScrapeAction.KICKOFF_SYNC,
+                    "start_date": date(2026, 3, 12),
+                    "end_date": date(2026, 3, 26),
+                    "reason": "3 match(es) missing kick-off time",
+                    "scraper_params": {
+                        "age_group": "U14",
+                        "league": "Homegrown",
+                        "division": "Northeast",
+                    },
+                },
+            ]
+        )
+        prompt = format_plan_prompt(plan)
+        assert "KICKOFF SYNC" in prompt
+        assert "scrape_matches(" in prompt
