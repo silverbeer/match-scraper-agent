@@ -54,9 +54,9 @@ def build_report(
     lines.append("*Match Scraper Report*")
     local = now.astimezone(_DISPLAY_TZ)
     tz_abbr = local.strftime("%Z")  # EDT or EST
-    ts = escape(local.strftime(f"%Y-%m-%d %H:%M {tz_abbr}"))
+    ts = escape(local.strftime(f"%Y-%m-%d %-I:%M %p {tz_abbr}"))
     target_label = escape(target) if target else "all targets"
-    header_parts = [ts, escape(env)]
+    header_parts = [ts]
     if target:
         header_parts.append(target_label)
     if dry_run:
@@ -167,7 +167,7 @@ def build_report(
     next_run, delta = _next_scheduled_run(now)
     next_local = next_run.astimezone(_DISPLAY_TZ)
     next_tz = next_local.strftime("%Z")
-    next_str = escape(next_local.strftime(f"%H:%M {next_tz}"))
+    next_str = escape(next_local.strftime(f"%-I:%M %p {next_tz}"))
     delta_str = _format_delta(delta)
     lines.append(f"*Next run:* {next_str} \\(in {escape(delta_str)}\\)")
 

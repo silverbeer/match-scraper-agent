@@ -6,6 +6,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from agent.planner import (
     _KICKOFF_LOOKAHEAD_DAYS,
+    _match_weekend_window,
     RunPlan,
     ScrapeAction,
     compute_scrape_plan,
@@ -70,6 +71,38 @@ class TestIsWeeklySyncRun:
         assert is_weekly_sync_run(dt) is False
 
 
+class TestMatchWeekendWindow:
+    def test_on_saturday(self):
+        # Saturday Mar 7 → window is Fri Mar 6 – Mon Mar 9
+        fri, mon = _match_weekend_window(date(2026, 3, 7))
+        assert fri == date(2026, 3, 6)
+        assert mon == date(2026, 3, 9)
+
+    def test_on_monday(self):
+        # Monday Mar 9 → window is Fri Mar 6 – Mon Mar 9
+        fri, mon = _match_weekend_window(date(2026, 3, 9))
+        assert fri == date(2026, 3, 6)
+        assert mon == date(2026, 3, 9)
+
+    def test_on_wednesday(self):
+        # Wednesday Mar 11 → window is Fri Mar 6 – Mon Mar 9
+        fri, mon = _match_weekend_window(date(2026, 3, 11))
+        assert fri == date(2026, 3, 6)
+        assert mon == date(2026, 3, 9)
+
+    def test_on_friday(self):
+        # Friday Mar 13 → window is Fri Mar 13 – Mon Mar 16
+        fri, mon = _match_weekend_window(date(2026, 3, 13))
+        assert fri == date(2026, 3, 13)
+        assert mon == date(2026, 3, 16)
+
+    def test_on_thursday(self):
+        # Thursday Mar 12 → window is Fri Mar 6 – Mon Mar 9
+        fri, mon = _match_weekend_window(date(2026, 3, 12))
+        assert fri == date(2026, 3, 6)
+        assert mon == date(2026, 3, 9)
+
+
 class TestComputeScrapePlan:
     def test_all_targets_up_to_date_skips(self):
         mt_targets = [
@@ -113,8 +146,8 @@ class TestComputeScrapePlan:
 
         u14 = next(p for p in plan.plans if p.target_key == "u14-hg")
         assert u14.action == ScrapeAction.SCORE_SYNC
-        assert u14.start_date == date(2026, 3, 5)  # 3 days before last_played
-        assert u14.end_date == SEASON_END
+        assert u14.start_date == date(2026, 3, 6)  # Friday of match weekend
+        assert u14.end_date == date(2026, 3, 9)  # Monday after match weekend
         assert "3 match(es) awaiting scores" in u14.reason
 
     def test_missing_from_mt_triggers_full_sync(self):
