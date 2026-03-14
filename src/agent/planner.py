@@ -14,10 +14,14 @@ logger = structlog.get_logger()
 # Score-sync lookback: scrape this many days before the earliest unscored match
 _SCORE_SYNC_LOOKBACK_DAYS = 3
 
+# Kickoff-sync lookahead: check matches within this many days for missing kick-off times
+_KICKOFF_LOOKAHEAD_DAYS = 14
+
 
 class ScrapeAction(StrEnum):
     FULL_SYNC = "full_sync"
     SCORE_SYNC = "score_sync"
+    KICKOFF_SYNC = "kickoff_sync"
     SKIP = "skip"
 
 
@@ -166,6 +170,8 @@ def compute_scrape_plan(
             continue
 
         needs_score = mt_data.get("needs_score", 0)
+        needs_kickoff = mt_data.get("needs_kickoff", 0)
+
         if needs_score > 0:
             last_played = mt_data.get("last_played_date")
             if last_played:
@@ -177,6 +183,10 @@ def compute_scrape_plan(
             else:
                 start = today
 
+            reason_parts = [f"{needs_score} match(es) awaiting scores"]
+            if needs_kickoff > 0:
+                reason_parts.append(f"{needs_kickoff} missing kick-off time(s)")
+
             plans.append(
                 ScrapePlan(
                     target_key=target_key,
@@ -184,7 +194,21 @@ def compute_scrape_plan(
                     action=ScrapeAction.SCORE_SYNC,
                     start_date=start,
                     end_date=season_end,
-                    reason=f"{needs_score} match(es) awaiting scores",
+                    reason=", ".join(reason_parts),
+                    scraper_params=cfg,
+                )
+            )
+            continue
+
+        if needs_kickoff > 0:
+            plans.append(
+                ScrapePlan(
+                    target_key=target_key,
+                    target_label=label,
+                    action=ScrapeAction.KICKOFF_SYNC,
+                    start_date=today,
+                    end_date=today + timedelta(days=_KICKOFF_LOOKAHEAD_DAYS),
+                    reason=f"{needs_kickoff} match(es) missing kick-off time",
                     scraper_params=cfg,
                 )
             )
@@ -226,7 +250,11 @@ def format_plan_prompt(plan: RunPlan) -> str:
             lines.append("")
             continue
 
-        action_label = "FULL SYNC" if p.action == ScrapeAction.FULL_SYNC else "SCORE SYNC"
+        action_label = {
+            ScrapeAction.FULL_SYNC: "FULL SYNC",
+            ScrapeAction.SCORE_SYNC: "SCORE SYNC",
+            ScrapeAction.KICKOFF_SYNC: "KICKOFF SYNC",
+        }.get(p.action, p.action.value.upper())
         lines.append(f"{step}. **{p.target_label}: {action_label}**")
         lines.append(f"   Reason: {p.reason}")
 

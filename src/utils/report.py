@@ -72,7 +72,9 @@ def build_report(
     if scrape_plan and hasattr(scrape_plan, "plans"):
         plan_parts = []
         for p in scrape_plan.plans:
-            icon = {"full_sync": "🔄", "score_sync": "🎯", "skip": "⏭️"}.get(p.action.value, "•")
+            icon = {"full_sync": "🔄", "score_sync": "🎯", "kickoff_sync": "⏰", "skip": "⏭️"}.get(
+                p.action.value, "•"
+            )
             plan_parts.append(f"  {icon} {escape(p.target_label)}: {escape(p.reason)}")
         if mt_status.startswith("failed:"):
             lines.append(escape("⚠️ MT status FAILED — full-season fallback"))
@@ -115,6 +117,12 @@ def build_report(
         summary_parts.append(escape(f"{error_count} errors"))
     lines.append(f"*Matches:* {' · '.join(summary_parts)}")
 
+    no_kickoff = sum(
+        1
+        for m in scraped_matches
+        if m.get("match_time") is None and m.get("match_status") in ("scheduled", "tbd")
+    )
+
     status_parts = []
     if completed:
         status_parts.append(escape(f"{completed} completed"))
@@ -122,6 +130,8 @@ def build_report(
         status_parts.append(escape(f"{scheduled} scheduled"))
     if tbd:
         status_parts.append(escape(f"{tbd} tbd"))
+    if no_kickoff:
+        status_parts.append(escape(f"{no_kickoff} no time"))
     if status_parts:
         lines.append(f"  {' · '.join(status_parts)}")
     lines.append("")
@@ -145,6 +155,12 @@ def build_report(
     missing_lines = _missing_scores_section(now, scraped_matches)
     if missing_lines:
         lines.extend(missing_lines)
+        lines.append("")
+
+    # --- Missing Kick-off Times ---
+    kickoff_lines = _missing_kickoff_section(scraped_matches)
+    if kickoff_lines:
+        lines.extend(kickoff_lines)
         lines.append("")
 
     # --- Next Run ---
@@ -272,6 +288,27 @@ def _missing_scores_section(now: datetime, matches: list[dict[str, Any]]) -> lis
                 md = escape(m.get("match_date", "?"))
                 lines.append(f"  • {md} {home} vs {away} — {status}")
 
+    return lines
+
+
+def _missing_kickoff_section(matches: list[dict[str, Any]]) -> list[str]:
+    """Build the missing kick-off times section."""
+    missing = [
+        m
+        for m in matches
+        if m.get("match_time") is None and m.get("match_status") in ("scheduled", "tbd")
+    ]
+    if not missing:
+        return []
+
+    lines: list[str] = []
+    n = len(missing)
+    lines.append(f"*Missing Kick\\-off Times \\({escape(str(n))}\\):*")
+    for m in sorted(missing, key=lambda x: x.get("match_date", "")):
+        md = escape(m.get("match_date", "?"))
+        home = escape(m.get("home_team", "?"))
+        away = escape(m.get("away_team", "?"))
+        lines.append(f"  • {md} {home} vs {away}")
     return lines
 
 
