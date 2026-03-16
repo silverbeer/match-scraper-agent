@@ -1,0 +1,140 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backfill-ne-u14-season-start
+  namespace: match-scraper
+  labels:
+    app: match-scraper-agent
+    task: backfill
+    division: northeast
+    age-group: u14
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        app: match-scraper-agent
+        task: backfill
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: agent
+          image: ghcr.io/silverbeer/match-scraper-agent:latest
+          args:
+            - scrape
+            - --target
+            - u14-hg
+            - --from
+            - "2026-02-28"
+            - --to
+            - "2026-03-16"
+            - --submit
+            - --env
+            - prod
+          envFrom:
+            - configMapRef:
+                name: match-scraper-agent-config
+            - secretRef:
+                name: match-scraper-agent-secret
+          resources:
+            requests:
+              cpu: 200m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backfill-ne-u15-season-start
+  namespace: match-scraper
+  labels:
+    app: match-scraper-agent
+    task: backfill
+    division: northeast
+    age-group: u15
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        app: match-scraper-agent
+        task: backfill
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: agent
+          image: ghcr.io/silverbeer/match-scraper-agent:latest
+          args:
+            - scrape
+            - --target
+            - u15-hg
+            - --from
+            - "2026-02-28"
+            - --to
+            - "2026-03-16"
+            - --submit
+            - --env
+            - prod
+          envFrom:
+            - configMapRef:
+                name: match-scraper-agent-config
+            - secretRef:
+                name: match-scraper-agent-secret
+          resources:
+            requests:
+              cpu: 200m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backfill-ne-u16-season-start
+  namespace: match-scraper
+  labels:
+    app: match-scraper-agent
+    task: backfill
+    division: northeast
+    age-group: u16
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        app: match-scraper-agent
+        task: backfill
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: agent
+          image: ghcr.io/silverbeer/match-scraper-agent:latest
+          args:
+            - scrape
+            - --target
+            - u16-hg
+            - --from
+            - "2026-02-28"
+            - --to
+            - "2026-03-16"
+            - --submit
+            - --env
+            - prod
+          envFrom:
+            - configMapRef:
+                name: match-scraper-agent-config
+            - secretRef:
+                name: match-scraper-agent-secret
+          resources:
+            requests:
+              cpu: 200m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
