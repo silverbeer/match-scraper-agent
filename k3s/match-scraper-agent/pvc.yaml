@@ -6,7 +6,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: local-path
+  storageClassName: linode-block-storage-retain
   resources:
     requests:
-      storage: 64Mi
+      storage: 1Gi
