@@ -546,6 +546,10 @@ def scrape(
         bool,
         typer.Option("--submit", help="Submit scraped matches to RabbitMQ queue"),
     ] = False,
+    club: Annotated[
+        str | None,
+        typer.Option("--club", help="Filter to a specific club name"),
+    ] = None,
 ) -> None:
     """Scrape matches directly — no LLM, no API key, no proxy needed."""
     import asyncio
@@ -585,7 +589,7 @@ def scrape(
         league=target_cfg.get("league", settings.league),
         division=target_cfg.get("division", settings.division),
         conference=target_cfg.get("conference", ""),
-        club="",
+        club=club or "",
         start_date=start,
         end_date=end,
         look_back_days=(end - start).days,
