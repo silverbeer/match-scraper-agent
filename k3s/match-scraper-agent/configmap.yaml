@@ -17,3 +17,4 @@ data:
   AGENT_JOURNAL_PATH: "/data/agent-state/journal.json"
   AGENT_DRY_RUN: "false"
   AGENT_JSON_LOGS: "true"
+  AGENT_AUDIT_SEASON_START: "2026-02-01"
