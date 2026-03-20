@@ -57,7 +57,7 @@ def _target_label(cfg: dict[str, str]) -> str:
 
 
 def _match_weekend_window(today: date) -> tuple[date, date]:
-    """Return the Fri–Mon window around the most recent match weekend.
+    """Return the Fri-Mon window around the most recent match weekend.
 
     Matches are played Saturday/Sunday; scores post Monday/Tuesday.
     This window captures the relevant matches without re-scraping the

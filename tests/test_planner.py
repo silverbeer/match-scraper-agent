@@ -6,9 +6,9 @@ from datetime import UTC, date, datetime, timedelta
 
 from agent.planner import (
     _KICKOFF_LOOKAHEAD_DAYS,
-    _match_weekend_window,
     RunPlan,
     ScrapeAction,
+    _match_weekend_window,
     compute_scrape_plan,
     format_plan_prompt,
     is_weekly_sync_run,
@@ -73,31 +73,31 @@ class TestIsWeeklySyncRun:
 
 class TestMatchWeekendWindow:
     def test_on_saturday(self):
-        # Saturday Mar 7 → window is Fri Mar 6 – Mon Mar 9
+        # Saturday Mar 7 → window is Fri Mar 6 - Mon Mar 9
         fri, mon = _match_weekend_window(date(2026, 3, 7))
         assert fri == date(2026, 3, 6)
         assert mon == date(2026, 3, 9)
 
     def test_on_monday(self):
-        # Monday Mar 9 → window is Fri Mar 6 – Mon Mar 9
+        # Monday Mar 9 → window is Fri Mar 6 - Mon Mar 9
         fri, mon = _match_weekend_window(date(2026, 3, 9))
         assert fri == date(2026, 3, 6)
         assert mon == date(2026, 3, 9)
 
     def test_on_wednesday(self):
-        # Wednesday Mar 11 → window is Fri Mar 6 – Mon Mar 9
+        # Wednesday Mar 11 → window is Fri Mar 6 - Mon Mar 9
         fri, mon = _match_weekend_window(date(2026, 3, 11))
         assert fri == date(2026, 3, 6)
         assert mon == date(2026, 3, 9)
 
     def test_on_friday(self):
-        # Friday Mar 13 → window is Fri Mar 13 – Mon Mar 16
+        # Friday Mar 13 → window is Fri Mar 13 - Mon Mar 16
         fri, mon = _match_weekend_window(date(2026, 3, 13))
         assert fri == date(2026, 3, 13)
         assert mon == date(2026, 3, 16)
 
     def test_on_thursday(self):
-        # Thursday Mar 12 → window is Fri Mar 6 – Mon Mar 9
+        # Thursday Mar 12 → window is Fri Mar 6 - Mon Mar 9
         fri, mon = _match_weekend_window(date(2026, 3, 12))
         assert fri == date(2026, 3, 6)
         assert mon == date(2026, 3, 9)

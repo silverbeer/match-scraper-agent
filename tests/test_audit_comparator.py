@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from audit.comparator import compare_matches
 
 
@@ -48,8 +46,15 @@ class TestClean:
         assert findings[0].finding_type == "extra_in_mt"
 
     def test_no_findings_with_score(self):
-        m = _match("IFA", "Arsenal", "2026-03-15", ext_id="abc1", status="completed",
-                   home_score=2, away_score=1)
+        m = _match(
+            "IFA",
+            "Arsenal",
+            "2026-03-15",
+            ext_id="abc1",
+            status="completed",
+            home_score=2,
+            away_score=1,
+        )
         findings = compare_matches([m], [m], "IFA")
         assert findings == []
 
@@ -98,10 +103,24 @@ class TestExtraInMT:
 
 class TestScoreMismatch:
     def test_score_differs(self):
-        scraped = _match("IFA", "Arsenal", "2026-03-15", ext_id="abc1",
-                         status="completed", home_score=2, away_score=1)
-        mt = _match("IFA", "Arsenal", "2026-03-15", ext_id="abc1",
-                    status="completed", home_score=1, away_score=1)
+        scraped = _match(
+            "IFA",
+            "Arsenal",
+            "2026-03-15",
+            ext_id="abc1",
+            status="completed",
+            home_score=2,
+            away_score=1,
+        )
+        mt = _match(
+            "IFA",
+            "Arsenal",
+            "2026-03-15",
+            ext_id="abc1",
+            status="completed",
+            home_score=1,
+            away_score=1,
+        )
         findings = compare_matches([scraped], [mt], "IFA")
         assert len(findings) == 1
         f = findings[0]
@@ -112,10 +131,24 @@ class TestScoreMismatch:
         assert f.scraped_match is not None
 
     def test_no_score_mismatch_when_scraped_score_is_none(self):
-        scraped = _match("IFA", "Arsenal", "2026-03-15", ext_id="abc1",
-                         status="scheduled", home_score=None, away_score=None)
-        mt = _match("IFA", "Arsenal", "2026-03-15", ext_id="abc1",
-                    status="scheduled", home_score=2, away_score=1)
+        scraped = _match(
+            "IFA",
+            "Arsenal",
+            "2026-03-15",
+            ext_id="abc1",
+            status="scheduled",
+            home_score=None,
+            away_score=None,
+        )
+        mt = _match(
+            "IFA",
+            "Arsenal",
+            "2026-03-15",
+            ext_id="abc1",
+            status="scheduled",
+            home_score=2,
+            away_score=1,
+        )
         findings = compare_matches([scraped], [mt], "IFA")
         assert not any(f.finding_type == "score_mismatch" for f in findings)
 
@@ -141,10 +174,12 @@ class TestStatusMismatch:
 
 class TestTimeMismatch:
     def test_time_differs(self):
-        scraped = _match("IFA", "Arsenal", "2026-03-15", ext_id="abc1",
-                         status="scheduled", match_time="10:00")
-        mt = _match("IFA", "Arsenal", "2026-03-15", ext_id="abc1",
-                    status="scheduled", match_time="11:00")
+        scraped = _match(
+            "IFA", "Arsenal", "2026-03-15", ext_id="abc1", status="scheduled", match_time="10:00"
+        )
+        mt = _match(
+            "IFA", "Arsenal", "2026-03-15", ext_id="abc1", status="scheduled", match_time="11:00"
+        )
         findings = compare_matches([scraped], [mt], "IFA")
         assert len(findings) == 1
         f = findings[0]
@@ -155,10 +190,12 @@ class TestTimeMismatch:
         assert f.scraped_match is not None
 
     def test_no_time_mismatch_when_scraped_time_is_none(self):
-        scraped = _match("IFA", "Arsenal", "2026-03-15", ext_id="abc1",
-                         status="scheduled", match_time=None)
-        mt = _match("IFA", "Arsenal", "2026-03-15", ext_id="abc1",
-                    status="scheduled", match_time="10:00")
+        scraped = _match(
+            "IFA", "Arsenal", "2026-03-15", ext_id="abc1", status="scheduled", match_time=None
+        )
+        mt = _match(
+            "IFA", "Arsenal", "2026-03-15", ext_id="abc1", status="scheduled", match_time="10:00"
+        )
         findings = compare_matches([scraped], [mt], "IFA")
         assert not any(f.finding_type == "time_mismatch" for f in findings)
 
@@ -192,10 +229,24 @@ class TestMatchKeyStrategy:
 
 class TestMultipleFindings:
     def test_score_and_status_mismatch_on_same_match(self):
-        scraped = _match("IFA", "Arsenal", "2026-03-15", ext_id="abc1",
-                         status="completed", home_score=2, away_score=1)
-        mt = _match("IFA", "Arsenal", "2026-03-15", ext_id="abc1",
-                    status="scheduled", home_score=0, away_score=0)
+        scraped = _match(
+            "IFA",
+            "Arsenal",
+            "2026-03-15",
+            ext_id="abc1",
+            status="completed",
+            home_score=2,
+            away_score=1,
+        )
+        mt = _match(
+            "IFA",
+            "Arsenal",
+            "2026-03-15",
+            ext_id="abc1",
+            status="scheduled",
+            home_score=0,
+            away_score=0,
+        )
         findings = compare_matches([scraped], [mt], "IFA")
         types = {f.finding_type for f in findings}
         assert "score_mismatch" in types
@@ -203,12 +254,24 @@ class TestMultipleFindings:
 
     def test_mixed_clean_and_dirty(self):
         clean = _match("IFA", "Arsenal", "2026-03-15", ext_id="abc1", status="scheduled")
-        dirty_scraped = _match("IFA", "Chelsea", "2026-03-22", ext_id="abc2",
-                                status="completed", home_score=3, away_score=0)
-        dirty_mt = _match("IFA", "Chelsea", "2026-03-22", ext_id="abc2",
-                           status="scheduled", home_score=None, away_score=None)
+        dirty_scraped = _match(
+            "IFA",
+            "Chelsea",
+            "2026-03-22",
+            ext_id="abc2",
+            status="completed",
+            home_score=3,
+            away_score=0,
+        )
+        dirty_mt = _match(
+            "IFA",
+            "Chelsea",
+            "2026-03-22",
+            ext_id="abc2",
+            status="scheduled",
+            home_score=None,
+            away_score=None,
+        )
         findings = compare_matches([clean, dirty_scraped], [clean, dirty_mt], "IFA")
         assert len(findings) == 2  # score_mismatch + status_mismatch
-        assert all(
-            f.home_team == "IFA" and f.away_team == "Chelsea" for f in findings
-        )
+        assert all(f.home_team == "IFA" and f.away_team == "Chelsea" for f in findings)
