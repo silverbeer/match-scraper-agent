@@ -672,3 +672,168 @@ def scrape(
                     error=str(exc),
                 )
         typer.echo(f"\nSubmitted {submitted} matches to queue ({errors} errors).")
+
+
+def _send_telegram_audit_report(
+    settings: AgentSettings,
+    result: Any,
+    env: str,
+) -> None:
+    """Send audit findings report to Telegram. Silently skips if not configured."""
+    if not settings.telegram_bot_token or not settings.telegram_chat_id:
+        logger.debug("telegram.skipped", reason="not configured")
+        return
+
+    from telegram_notify import TelegramClient
+
+    from audit.report import build_audit_report
+
+    report = build_audit_report(result=result, env=env)
+    try:
+        client = TelegramClient(
+            bot_token=settings.telegram_bot_token,
+            chat_id=settings.telegram_chat_id,
+        )
+        client.send(report)
+        logger.info("telegram.sent", chat_id=settings.telegram_chat_id)
+    except Exception as exc:
+        logger.warning("telegram.failed", error=str(exc))
+
+
+def _send_telegram_processor_report(
+    settings: AgentSettings,
+    result: Any,
+    env: str,
+) -> None:
+    """Send processor summary report to Telegram. Silently skips if not configured."""
+    if not settings.telegram_bot_token or not settings.telegram_chat_id:
+        logger.debug("telegram.skipped", reason="not configured")
+        return
+
+    from telegram_notify import TelegramClient
+
+    from audit.report import build_processor_report
+
+    report = build_processor_report(result=result, env=env)
+    try:
+        client = TelegramClient(
+            bot_token=settings.telegram_bot_token,
+            chat_id=settings.telegram_chat_id,
+        )
+        client.send(report)
+        logger.info("telegram.sent", chat_id=settings.telegram_chat_id)
+    except Exception as exc:
+        logger.warning("telegram.failed", error=str(exc))
+
+
+@app.command()
+def audit(
+    env: Annotated[str, typer.Option("--env", help="Environment name (local, prod)")] = "local",
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Skip mutating operations")] = False,
+    json_logs: Annotated[bool, typer.Option("--json-logs", help="Output JSON log lines")] = False,
+) -> None:
+    """Audit one team against mlssoccer.com source of truth."""
+    import asyncio
+    from datetime import date
+
+    from audit.runner import run_one_team_audit
+    from config.settings import AgentSettings, env_file_path
+    from utils.logger import configure_logging
+
+    settings = AgentSettings(_env_file=env_file_path(env))
+    configure_logging(json_output=json_logs or settings.json_logs, log_level=settings.log_level)
+
+    run_id = uuid.uuid4().hex[:12]
+    structlog.contextvars.bind_contextvars(run_id=run_id, env=env)
+
+    try:
+        season_start = date.fromisoformat(settings.audit_season_start)
+    except ValueError:
+        typer.echo(f"Invalid AGENT_AUDIT_SEASON_START: {settings.audit_season_start}", err=True)
+        raise typer.Exit(code=1) from None
+
+    from agent.tools import SEASON_END
+
+    try:
+        result = asyncio.run(
+            run_one_team_audit(
+                settings=settings,
+                dry_run=dry_run,
+                season_start=season_start,
+                season_end=SEASON_END,
+            )
+        )
+    except Exception as exc:
+        logger.error("audit.failed", error=str(exc), exc_info=exc)
+        raise typer.Exit(code=1) from None
+
+    if result is None:
+        logger.info("audit.all_teams_current")
+        typer.echo("All teams are up-to-date. Nothing to audit.")
+    else:
+        logger.info(
+            "audit.completed",
+            team=result.team,
+            age_group=result.age_group,
+            scraped=result.scraped_count,
+            mt=result.mt_count,
+            findings=len(result.findings),
+        )
+        typer.echo(
+            f"Audited {result.team} {result.age_group}: "
+            f"{result.scraped_count} scraped, {result.mt_count} in MT, "
+            f"{len(result.findings)} findings"
+        )
+        if result.findings:
+            _send_telegram_audit_report(settings=settings, result=result, env=env)
+
+    structlog.contextvars.unbind_contextvars("run_id", "env")
+
+
+@app.command(name="audit-process")
+def audit_process(
+    env: Annotated[str, typer.Option("--env", help="Environment name (local, prod)")] = "local",
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Skip mutating operations")] = False,
+    json_logs: Annotated[bool, typer.Option("--json-logs", help="Output JSON log lines")] = False,
+) -> None:
+    """Process pending audit findings — resubmit corrections to RabbitMQ."""
+    import asyncio
+
+    from src.celery.queue_client import MatchQueueClient
+
+    from audit.processor import process_pending_events
+    from config.settings import AgentSettings, env_file_path
+    from utils.logger import configure_logging
+
+    settings = AgentSettings(_env_file=env_file_path(env))
+    configure_logging(json_output=json_logs or settings.json_logs, log_level=settings.log_level)
+
+    run_id = uuid.uuid4().hex[:12]
+    structlog.contextvars.bind_contextvars(run_id=run_id, env=env)
+
+    queue_client = MatchQueueClient(**_queue_client_kwargs(settings))
+
+    try:
+        result = asyncio.run(
+            process_pending_events(
+                settings=settings,
+                queue_client=queue_client,
+                dry_run=dry_run,
+            )
+        )
+    except Exception as exc:
+        logger.error("audit_process.failed", error=str(exc), exc_info=exc)
+        raise typer.Exit(code=1) from None
+
+    logger.info(
+        "audit_process.completed",
+        events_processed=result.events_processed,
+        matches_resubmitted=result.matches_resubmitted,
+        extra_in_mt_flagged=result.extra_in_mt_flagged,
+        errors=result.errors,
+    )
+
+    if result.matches_resubmitted or result.extra_in_mt_flagged:
+        _send_telegram_processor_report(settings=settings, result=result, env=env)
+
+    structlog.contextvars.unbind_contextvars("run_id", "env")

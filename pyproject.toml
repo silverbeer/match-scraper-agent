@@ -32,7 +32,7 @@ build-backend = "hatchling.build"
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agent", "src/cli", "src/config", "src/utils"]
+packages = ["src/agent", "src/audit", "src/cli", "src/config", "src/utils"]
 
 [tool.ruff]
 line-length = 99

@@ -59,6 +59,9 @@ class AgentSettings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
+    # Audit settings
+    audit_season_start: str = "2026-02-01"  # Spring segment start date
+
     # Database (missing-table Supabase — used by trigger.sh post-run verification)
     db_host: str = "127.0.0.1"
     db_port: int = 54332
