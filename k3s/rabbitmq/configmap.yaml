@@ -6,6 +6,11 @@ metadata:
 data:
   definitions.json: |
     {
+      "vhosts": [
+        {
+          "name": "/"
+        }
+      ],
       "exchanges": [
         {
           "name": "matches-fanout",

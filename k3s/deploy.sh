@@ -9,6 +9,7 @@
 # Required vars in envs/.env.prod:
 #   AGENT_ANTHROPIC_API_KEY       — API key (or "agent-via-proxy" when using proxy)
 #   AGENT_MISSING_TABLE_API_KEY   — missing-table API key
+#   AGENT_TELEGRAM_BOT_TOKEN     — Telegram bot token for notifications
 
 set -euo pipefail
 
@@ -55,6 +56,7 @@ type: Opaque
 stringData:
   AGENT_ANTHROPIC_API_KEY: "$AGENT_ANTHROPIC_API_KEY"
   AGENT_MISSING_TABLE_API_KEY: "$AGENT_MISSING_TABLE_API_KEY"
+  AGENT_TELEGRAM_BOT_TOKEN: "$AGENT_TELEGRAM_BOT_TOKEN"
 EOF
 
 echo "Generated $SECRET_FILE"

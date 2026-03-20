@@ -6,7 +6,7 @@ metadata:
 data:
   AGENT_PROXY_BASE_URL: "http://iron-claw-proxy.iron-claw.svc.cluster.local:8100"
   AGENT_MODEL_NAME: "claude-haiku-4-5-20251001"
-  AGENT_RABBITMQ_URL: "amqp://admin:admin123@messaging-rabbitmq.match-scraper.svc.cluster.local:5672//"
+  AGENT_RABBITMQ_URL: "amqp://admin:admin123@rabbitmq.match-scraper.svc.cluster.local:5672//"
   AGENT_QUEUE_NAME: "matches.prod"
   AGENT_LEAGUE: "Homegrown"
   AGENT_AGE_GROUP: "U14"
@@ -18,3 +18,4 @@ data:
   AGENT_DRY_RUN: "false"
   AGENT_JSON_LOGS: "true"
   AGENT_AUDIT_SEASON_START: "2026-02-01"
+  AGENT_TELEGRAM_CHAT_ID: "-5109858197"

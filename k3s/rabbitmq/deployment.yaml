@@ -25,9 +25,9 @@ spec:
               name: management
           env:
             - name: RABBITMQ_DEFAULT_USER
-              value: "guest"
+              value: "admin"
             - name: RABBITMQ_DEFAULT_PASS
-              value: "guest"
+              value: "admin123"
             - name: RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS
               value: "-rabbitmq_management load_definitions \"/etc/rabbitmq/definitions.json\""
           readinessProbe:
