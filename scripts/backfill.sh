@@ -57,15 +57,16 @@ for TARGET in "${TARGET_LIST[@]}"; do
   TARGET=$(echo "$TARGET" | xargs)  # trim whitespace
   JOB_NAME="backfill-${TARGET}-${SLUG}"
 
-  ARGS="- scrape\n            - --target\n            - ${TARGET}\n            - --from\n            - \"${FROM_DATE}\"\n            - --to\n            - \"${TO_DATE}\"\n            - --submit\n            - --env\n            - ${ENV}"
-  if [[ "$SCRAPE_DRY_RUN" == "true" ]]; then
-    ARGS="${ARGS}\n            - --dry-run"
-  fi
-
   if [[ "$FIRST" == "false" ]]; then
     echo "---" >> "$OUTFILE"
   fi
   FIRST=false
+
+  # Build args block (extra --dry-run appended if requested)
+  DRY_RUN_ARG=""
+  if [[ "$SCRAPE_DRY_RUN" == "true" ]]; then
+    DRY_RUN_ARG=$'\n            - --dry-run'
+  fi
 
   cat >> "$OUTFILE" <<EOF
 apiVersion: batch/v1
@@ -91,7 +92,16 @@ spec:
         - name: agent
           image: ghcr.io/silverbeer/match-scraper-agent:latest
           args:
-$(echo -e "$ARGS" | sed 's/^/            /')
+            - scrape
+            - --target
+            - ${TARGET}
+            - --from
+            - "${FROM_DATE}"
+            - --to
+            - "${TO_DATE}"
+            - --submit
+            - --env
+            - ${ENV}${DRY_RUN_ARG}
           envFrom:
             - configMapRef:
                 name: match-scraper-agent-config
