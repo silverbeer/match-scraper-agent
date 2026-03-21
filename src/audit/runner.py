@@ -107,7 +107,7 @@ async def run_one_team_audit(
         for m in raw_matches
     ]
 
-    # Step 5: Fetch MT matches for this team
+    # Step 5: Fetch MT matches for this team — scoped to same window as scrape
     mt_matches = await fetch_mt_matches(
         api_url=settings.missing_table_api_url,
         api_key=settings.missing_table_api_key or "",
@@ -116,6 +116,8 @@ async def run_one_team_audit(
         division=division,
         team=team,
         season=season,
+        start_date=season_start.isoformat(),
+        end_date=season_end.isoformat(),
     )
     logger.info("audit.runner.mt_matches", count=len(mt_matches))
 

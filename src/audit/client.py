@@ -50,21 +50,28 @@ async def fetch_mt_matches(
     division: str,
     team: str,
     season: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> list[dict]:
-    """Fetch individual match records for a team from MT."""
+    """Fetch individual match records for a team from MT.
+
+    start_date/end_date scope the results to the same window as the scrape
+    to avoid false extra_in_mt findings from other season segments (e.g. fall).
+    """
     url = f"{api_url}/api/agent/matches"
+    params: dict[str, str] = {
+        "age_group": age_group,
+        "league": league,
+        "division": division,
+        "team": team,
+        "season": season,
+    }
+    if start_date:
+        params["start_date"] = start_date
+    if end_date:
+        params["end_date"] = end_date
     async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get(
-            url,
-            params={
-                "age_group": age_group,
-                "league": league,
-                "division": division,
-                "team": team,
-                "season": season,
-            },
-            headers=_headers(api_key),
-        )
+        resp = await client.get(url, params=params, headers=_headers(api_key))
         resp.raise_for_status()
         data = resp.json()
     matches = data.get("matches", [])
