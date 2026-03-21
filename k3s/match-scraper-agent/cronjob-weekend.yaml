@@ -1,10 +1,10 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: match-scraper-agent
+  name: match-scraper-agent-weekend
   namespace: match-scraper
 spec:
-  schedule: "0 2,8,14,20 * * *"  # 4x/day every day (02:00, 08:00, 14:00, 20:00 UTC) — see cronjob-weekend.yaml for 4 extra Sat/Sun slots
+  schedule: "0 5,11,17,23 * * 0,6"  # 4 extra slots Sat/Sun (05:00, 11:00, 17:00, 23:00 UTC)
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3

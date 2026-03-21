@@ -8,8 +8,9 @@ from zoneinfo import ZoneInfo
 
 from telegram_notify import escape
 
-# K3s CronJob schedule hours (UTC)
-_CRON_HOURS = [2, 8, 14, 20]
+# K3s CronJob schedule hours (UTC) — weekdays 4x, weekends 8x
+_CRON_HOURS_WEEKDAY = [2, 8, 14, 20]
+_CRON_HOURS_WEEKEND = [2, 5, 8, 11, 14, 17, 20, 23]
 
 # Display timezone for reports
 _DISPLAY_TZ = ZoneInfo("America/New_York")
@@ -314,14 +315,19 @@ def _missing_kickoff_section(matches: list[dict[str, Any]]) -> list[str]:
 
 def _next_scheduled_run(now: datetime) -> tuple[datetime, timedelta]:
     """Compute the next scheduled run time from the cron schedule."""
-    for hour in _CRON_HOURS:
+    is_weekend = now.weekday() in (5, 6)  # 5=Sat, 6=Sun
+    hours = _CRON_HOURS_WEEKEND if is_weekend else _CRON_HOURS_WEEKDAY
+
+    for hour in hours:
         candidate = now.replace(hour=hour, minute=0, second=0, microsecond=0)
         if candidate > now:
             return candidate, candidate - now
 
     # Wrap to first slot tomorrow
     tomorrow = now + timedelta(days=1)
-    candidate = tomorrow.replace(hour=_CRON_HOURS[0], minute=0, second=0, microsecond=0)
+    tomorrow_is_weekend = tomorrow.weekday() in (5, 6)
+    tomorrow_hours = _CRON_HOURS_WEEKEND if tomorrow_is_weekend else _CRON_HOURS_WEEKDAY
+    candidate = tomorrow.replace(hour=tomorrow_hours[0], minute=0, second=0, microsecond=0)
     return candidate, candidate - now
 
 

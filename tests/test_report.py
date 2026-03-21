@@ -101,7 +101,7 @@ class TestBuildReport:
             now=now,
         )
         assert "Next run" in report
-        assert "4:00 PM EDT" in report  # 20:00 UTC = 4:00 PM EDT
+        assert "1:00 PM EDT" in report  # Sun 14:02 UTC → next weekend slot 17:00 UTC = 1:00 PM EDT
 
     def test_today_missing_scores_shown(self) -> None:
         now = datetime(2026, 3, 8, 14, 0, tzinfo=UTC)  # Saturday
@@ -240,21 +240,40 @@ class TestIsLastWeekend:
 
 
 class TestNextScheduledRun:
-    def test_mid_morning(self) -> None:
-        now = datetime(2026, 3, 8, 10, 30, tzinfo=UTC)
+    # Weekend schedule (Sat/Sun): 02:00, 05:00, 08:00, 11:00, 14:00, 17:00, 20:00, 23:00
+    def test_mid_morning_weekend(self) -> None:
+        now = datetime(2026, 3, 8, 10, 30, tzinfo=UTC)  # Sunday
+        next_run, _delta = _next_scheduled_run(now)
+        assert next_run.hour == 11
+
+    def test_after_last_slot_weekend(self) -> None:
+        now = datetime(2026, 3, 8, 23, 30, tzinfo=UTC)  # Sunday after last slot
+        next_run, _delta = _next_scheduled_run(now)
+        assert next_run.hour == 2
+        assert next_run.day == 9  # Monday
+
+    def test_before_first_slot_weekend(self) -> None:
+        now = datetime(2026, 3, 8, 1, 0, tzinfo=UTC)  # Sunday
+        next_run, _ = _next_scheduled_run(now)
+        assert next_run.hour == 2
+
+    def test_extra_slot_weekend(self) -> None:
+        now = datetime(2026, 3, 8, 21, 0, tzinfo=UTC)  # Sunday 21:00 — extra slot at 23:00
+        next_run, _ = _next_scheduled_run(now)
+        assert next_run.hour == 23
+        assert next_run.day == 8  # same day
+
+    # Weekday schedule (Mon-Fri): 02:00, 08:00, 14:00, 20:00
+    def test_mid_morning_weekday(self) -> None:
+        now = datetime(2026, 3, 9, 10, 30, tzinfo=UTC)  # Monday
         next_run, _delta = _next_scheduled_run(now)
         assert next_run.hour == 14
 
-    def test_after_last_slot(self) -> None:
-        now = datetime(2026, 3, 8, 21, 0, tzinfo=UTC)
+    def test_after_last_slot_weekday(self) -> None:
+        now = datetime(2026, 3, 9, 21, 0, tzinfo=UTC)  # Monday after last slot
         next_run, _delta = _next_scheduled_run(now)
         assert next_run.hour == 2
-        assert next_run.day == 9
-
-    def test_before_first_slot(self) -> None:
-        now = datetime(2026, 3, 8, 1, 0, tzinfo=UTC)
-        next_run, _ = _next_scheduled_run(now)
-        assert next_run.hour == 2
+        assert next_run.day == 10  # Tuesday
 
 
 class TestWeekendScores:
