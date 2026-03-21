@@ -22,6 +22,7 @@ class TargetEntry(BaseModel):
     completed: int = 0
     missing_scores: int = 0
     errors: int = 0
+    action_taken: str = ""
 
 
 class RunJournal(BaseModel):
@@ -108,17 +109,17 @@ def build_journal(
         run_id=run_id,
         target=target,
         dry_run=dry_run,
-        agent_summary=result.output.summary,
+        agent_summary=result.summary,
         targets=list(targets_map.values()),
-        total_matches_found=result.output.matches_found,
-        total_matches_submitted=result.output.matches_submitted,
+        total_matches_found=result.matches_found,
+        total_matches_submitted=result.matches_submitted,
         weekend_scores_status=weekend_status,
         missing_score_matches=missing,
     )
 
 
-def format_journal_prompt(journal: RunJournal | None) -> str:
-    """Format a journal as context to prepend to the user prompt."""
+def format_journal_log(journal: RunJournal | None) -> str:
+    """Format a journal for structured log output."""
     if journal is None:
         return ""
 
