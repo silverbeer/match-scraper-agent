@@ -15,3 +15,5 @@ envs/.env.prod
 htmlcov/
 # K8s secrets (use secret.yaml.example as template)
 k3s/**/secret.yaml
+# Ad-hoc backfill jobs — generated locally, applied directly (see docs/backfill.md)
+k3s/backfill/

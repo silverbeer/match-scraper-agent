@@ -82,6 +82,34 @@ uv run ruff format --check src/ tests/
 | `all_scored_skip` | Journal shows 0 missing scores + planner says SCORE_SYNC | Downgrade to SKIP |
 | `error_retry` | Journal shows errors > 0 + planner says SKIP | Upgrade to FULL_SYNC |
 
+## Ad-hoc Backfills
+
+Backfill Job YAMLs are **not committed to the repo** — they accumulate fast and add no long-term value. Generated files live in `~/.local/share/match-scraper-agent/backfills/` and `k3s/backfill/` is gitignored.
+
+Use the generator script:
+
+```bash
+# Generate YAML (review before applying)
+./scripts/backfill.sh --targets u14-hg,u15-hg,u16-hg --from 2026-03-14 --to 2026-03-16
+
+# Generate and apply immediately
+./scripts/backfill.sh --targets u14-hg --from 2026-03-14 --to 2026-03-16 --apply
+
+# Dry run (no submission, just scrape + log)
+./scripts/backfill.sh --targets u14-hg --from 2026-03-14 --to 2026-03-16 --apply --dry-run
+```
+
+Monitor a running backfill:
+```bash
+kubectl logs -n match-scraper -l task=backfill --follow
+kubectl get jobs -n match-scraper -l task=backfill
+```
+
+Clean up completed jobs:
+```bash
+kubectl delete jobs -n match-scraper -l task=backfill
+```
+
 ## Design Conventions
 
 - Pydantic v2 for all data models (use `model_validate`, not `parse_obj`)
