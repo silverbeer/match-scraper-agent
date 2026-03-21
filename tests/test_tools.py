@@ -1,4 +1,4 @@
-"""Tests for agent tool functions with mocked scraper and queue client."""
+"""Tests for tool functions with mocked scraper and queue client."""
 
 from __future__ import annotations
 
@@ -6,34 +6,23 @@ import asyncio
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from pydantic_ai import RunContext
-
-from agent.deps import AgentDeps
-from agent.tools import get_match_status, get_today_info, scrape_matches, submit_matches
-from config.settings import AgentSettings
+from agent.deps import RunContext
+from agent.tools import scrape_matches, submit_matches
 
 
-def _make_deps(
+def _make_ctx(
     *,
     dry_run: bool = False,
     mock_queue: MagicMock | None = None,
-) -> AgentDeps:
-    """Create AgentDeps with a mocked queue client."""
+) -> RunContext:
+    """Create a RunContext with a mocked queue client."""
     queue = mock_queue or MagicMock()
     queue.submit_match.return_value = "task-id-123"
-    settings = AgentSettings()
-    return AgentDeps(queue_client=queue, settings=settings, dry_run=dry_run)
-
-
-def _make_ctx(deps: AgentDeps) -> RunContext[AgentDeps]:
-    """Create a minimal RunContext for testing tools outside PydanticAI."""
     return RunContext(
-        deps=deps,
-        model=None,  # type: ignore[arg-type]
-        usage={},  # type: ignore[arg-type]
-        prompt="test",
-        run_step=0,
-        retry=0,
+        queue_client=queue,
+        missing_table_api_url="http://localhost:8000",
+        missing_table_api_key="test-key",
+        dry_run=dry_run,
     )
 
 
@@ -60,26 +49,9 @@ def _fake_match(
     return m
 
 
-class TestGetTodayInfo:
-    def test_returns_date_info(self) -> None:
-        deps = _make_deps()
-        ctx = _make_ctx(deps)
-        result = get_today_info(ctx)
-        assert "Date:" in result
-        assert "Day:" in result
-        assert "Week:" in result
-
-    def test_returns_time_utc(self) -> None:
-        deps = _make_deps()
-        ctx = _make_ctx(deps)
-        result = get_today_info(ctx)
-        assert "Time (UTC):" in result
-
-
 class TestScrapeMatches:
     def test_returns_match_summary(self) -> None:
-        deps = _make_deps()
-        ctx = _make_ctx(deps)
+        ctx = _make_ctx()
 
         mock_scraper = MagicMock()
         mock_scraper.scrape_matches = AsyncMock(
@@ -102,8 +74,7 @@ class TestScrapeMatches:
         assert "Team C vs Team D" in result
 
     def test_no_matches_returns_message(self) -> None:
-        deps = _make_deps()
-        ctx = _make_ctx(deps)
+        ctx = _make_ctx()
 
         mock_scraper = MagicMock()
         mock_scraper.scrape_matches = AsyncMock(return_value=[])
@@ -118,9 +89,8 @@ class TestScrapeMatches:
 
         assert "No matches found" in result
 
-    def test_stores_matches_in_deps(self) -> None:
-        deps = _make_deps()
-        ctx = _make_ctx(deps)
+    def test_stores_matches_in_ctx(self) -> None:
+        ctx = _make_ctx()
 
         mock_scraper = MagicMock()
         mock_scraper.scrape_matches = AsyncMock(return_value=[_fake_match()])
@@ -131,14 +101,13 @@ class TestScrapeMatches:
         ):
             asyncio.run(scrape_matches(ctx, start_date="2026-02-18", end_date="2026-02-25"))
 
-        assert len(deps._scraped_matches) == 1
-        assert deps._scraped_matches[0]["home_team"] == "Team A"
-        assert deps._scraped_matches[0]["match_time"] == "18:00"
-        assert deps._scraped_matches[0]["source"] == "match-scraper-agent"
+        assert len(ctx._scraped_matches) == 1
+        assert ctx._scraped_matches[0]["home_team"] == "Team A"
+        assert ctx._scraped_matches[0]["match_time"] == "18:00"
+        assert ctx._scraped_matches[0]["source"] == "match-scraper-agent"
 
     def test_scored_match_includes_scores(self) -> None:
-        deps = _make_deps()
-        ctx = _make_ctx(deps)
+        ctx = _make_ctx()
 
         mock_scraper = MagicMock()
         mock_scraper.scrape_matches = AsyncMock(
@@ -160,11 +129,10 @@ class TestSubmitMatches:
     def test_submits_scraped_matches(self) -> None:
         mock_queue = MagicMock()
         mock_queue.submit_match.return_value = "task-123"
-        deps = _make_deps(mock_queue=mock_queue)
-        deps._scraped_matches = [
+        ctx = _make_ctx(mock_queue=mock_queue)
+        ctx._scraped_matches = [
             {"home_team": "A", "away_team": "B", "match_date": "2026-02-20"},
         ]
-        ctx = _make_ctx(deps)
 
         result = asyncio.run(submit_matches(ctx))
         assert "Submitted 1 matches" in result
@@ -172,19 +140,17 @@ class TestSubmitMatches:
 
     def test_dry_run_skips_submission(self) -> None:
         mock_queue = MagicMock()
-        deps = _make_deps(dry_run=True, mock_queue=mock_queue)
-        deps._scraped_matches = [
+        ctx = _make_ctx(dry_run=True, mock_queue=mock_queue)
+        ctx._scraped_matches = [
             {"home_team": "A", "away_team": "B", "match_date": "2026-02-20"},
         ]
-        ctx = _make_ctx(deps)
 
         result = asyncio.run(submit_matches(ctx))
         assert "[DRY RUN]" in result
         mock_queue.submit_match.assert_not_called()
 
     def test_no_matches_returns_message(self) -> None:
-        deps = _make_deps()
-        ctx = _make_ctx(deps)
+        ctx = _make_ctx()
 
         result = asyncio.run(submit_matches(ctx))
         assert "No matches to submit" in result
@@ -196,94 +162,13 @@ class TestSubmitMatches:
             Exception("connection lost"),
             "task-3",
         ]
-        deps = _make_deps(mock_queue=mock_queue)
-        deps._scraped_matches = [
+        ctx = _make_ctx(mock_queue=mock_queue)
+        ctx._scraped_matches = [
             {"home_team": "A", "away_team": "B"},
             {"home_team": "C", "away_team": "D"},
             {"home_team": "E", "away_team": "F"},
         ]
-        ctx = _make_ctx(deps)
 
         result = asyncio.run(submit_matches(ctx))
         assert "Submitted 2 matches" in result
         assert "1 errors" in result
-
-
-class TestGetMatchStatus:
-    def test_returns_summary(self) -> None:
-        deps = _make_deps()
-        ctx = _make_ctx(deps)
-
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {
-            "season": "2025-26",
-            "generated_at": "2026-03-08T14:00:00Z",
-            "targets": [
-                {
-                    "age_group": "U14",
-                    "league": "Homegrown",
-                    "division": "Northeast",
-                    "total": 92,
-                    "by_status": {"played": 45, "scheduled": 40, "tbd": 5, "postponed": 2},
-                    "needs_score": 5,
-                    "date_range": {"earliest": "2026-03-01", "latest": "2026-06-28"},
-                    "last_played_date": "2026-03-07",
-                },
-            ],
-        }
-
-        with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client.get = AsyncMock(return_value=mock_response)
-            mock_client_cls.return_value = mock_client
-
-            result = asyncio.run(get_match_status(ctx))
-
-        assert "MT Status" in result
-        assert "U14 Homegrown Northeast" in result
-        assert "92 matches" in result
-        assert "45 played" in result
-        assert "5 awaiting scores" in result
-
-    def test_fallback_on_error(self) -> None:
-        deps = _make_deps()
-        ctx = _make_ctx(deps)
-
-        with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client.get = AsyncMock(side_effect=Exception("connection refused"))
-            mock_client_cls.return_value = mock_client
-
-            result = asyncio.run(get_match_status(ctx))
-
-        assert "Could not reach MT backend" in result
-        assert "full-season scrape" in result
-
-    def test_empty_targets(self) -> None:
-        deps = _make_deps()
-        ctx = _make_ctx(deps)
-
-        mock_response = MagicMock()
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {
-            "season": "2025-26",
-            "targets": [],
-        }
-
-        with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client.get = AsyncMock(return_value=mock_response)
-            mock_client_cls.return_value = mock_client
-
-            result = asyncio.run(get_match_status(ctx))
-
-        assert "no matches" in result.lower()
-        assert "full-season sync" in result

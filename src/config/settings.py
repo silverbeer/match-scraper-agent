@@ -34,9 +34,6 @@ class AgentSettings(BaseSettings):
 
     model_config = {"env_prefix": "AGENT_", "extra": "ignore"}
 
-    proxy_base_url: str = "http://localhost:8100"
-    model_name: str = "claude-haiku-4-5-20251001"
-    anthropic_api_key: str = "agent-via-proxy"
     rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
     exchange_name: str = "matches-fanout"
     queue_name: str = ""
@@ -45,8 +42,6 @@ class AgentSettings(BaseSettings):
     division: str = "Northeast"
     missing_table_api_url: str = "http://localhost:8000"
     missing_table_api_key: str = ""
-    proxy_enabled: bool = True
-    min_token_budget: int = 5000
     dry_run: bool = False
     headless: bool = True
     json_logs: bool = False

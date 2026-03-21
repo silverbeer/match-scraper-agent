@@ -1,14 +1,13 @@
-"""PydanticAI tool functions for the match-scraper-agent."""
+"""Tool functions for the match-scraper-agent pipeline engine."""
 
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, date, datetime
+from datetime import date
 
 import structlog
-from pydantic_ai import RunContext
 
-from agent.deps import AgentDeps
+from agent.deps import RunContext
 
 logger = structlog.get_logger()
 
@@ -33,92 +32,13 @@ def _normalize_team_name(name: str, *, league: str = "") -> str:
     return TEAM_NAME_MAP.get(name, name)
 
 
-def get_today_info(ctx: RunContext[AgentDeps]) -> str:
-    """Get today's date information to help decide what actions to take.
-
-    Returns the current date, day of week, and week number. Use this at the
-    start of your run to understand what day it is.
-    """
-    now = datetime.now(tz=UTC)
-    logger.info("tool.get_today_info", date=now.strftime("%Y-%m-%d"), day=now.strftime("%A"))
-    return (
-        f"Date: {now.strftime('%Y-%m-%d')}\n"
-        f"Day: {now.strftime('%A')}\n"
-        f"Week: {now.isocalendar().week}\n"
-        f"Time (UTC): {now.strftime('%H:%M')}"
-    )
-
-
-async def get_match_status(ctx: RunContext[AgentDeps]) -> str:
-    """Check what match data MT already has for the current season.
-
-    Queries the MT backend for match counts grouped by age group, league,
-    and division. Use this to decide what needs scraping vs what's up to date.
-    """
-    import httpx
-
-    settings = ctx.deps.settings
-    season = _current_season()
-    url = f"{settings.missing_table_api_url}/api/agent/match-summary"
-
-    logger.info("tool.get_match_status", url=url, season=season)
-
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(
-                url,
-                params={"season": season},
-                headers={"Authorization": f"Bearer {settings.missing_table_api_key}"},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-    except Exception as exc:
-        logger.warning("tool.get_match_status.failed", error=str(exc))
-        ctx.deps._mt_status = f"failed:{exc}"
-        return "Could not reach MT backend. Falling back to full-season scrape."
-
-    targets = data.get("targets", [])
-    if not targets:
-        return f"MT has no matches for {season}. All targets need full-season sync."
-
-    lines = [f"MT Status ({season} season):\n"]
-    for t in targets:
-        status_parts = []
-        for s in ("played", "scheduled", "tbd", "postponed", "cancelled"):
-            count = t["by_status"].get(s, 0)
-            if count:
-                status_parts.append(f"{count} {s}")
-
-        needs = t.get("needs_score", 0)
-        if needs:
-            status_parts.append(f"{needs} awaiting scores")
-
-        summary = ", ".join(status_parts) if status_parts else "no matches"
-        line = f"{t['age_group']} {t['league']} {t['division']}: {t['total']} matches ({summary})"
-
-        details = []
-        dr = t.get("date_range", {})
-        if dr.get("earliest") and dr.get("latest"):
-            details.append(f"Dates: {dr['earliest']} - {dr['latest']}")
-        if t.get("last_played_date"):
-            details.append(f"Last played: {t['last_played_date']}")
-        if details:
-            line += f"\n  {' | '.join(details)}"
-
-        lines.append(line)
-
-    ctx.deps._mt_status = "ok"
-    logger.info("tool.get_match_status.done", target_count=len(targets))
-    return "\n".join(lines)
-
-
-# Season end date — enforced as a floor for end_date so the LLM can't
+# Season end date — enforced as a floor for end_date so we can't
 # accidentally use a shorter range than the full remaining season.
 SEASON_END = date(2026, 6, 30)
 
 
 async def scrape_matches(
-    ctx: RunContext[AgentDeps],
+    ctx: RunContext,
     start_date: str,
     end_date: str,
     age_group: str | None = None,
@@ -131,37 +51,26 @@ async def scrape_matches(
 
     Uses Playwright + CSS selectors to extract match data. No LLM tokens
     consumed — this is pure browser automation.
-
-    Args:
-        start_date: Start date (ISO 8601, e.g. "2026-02-18").
-        end_date: End date (ISO 8601, e.g. "2026-05-10").
-        age_group: Age group to scrape (e.g. "U14"). Defaults to agent config.
-        league: League type ("Homegrown" or "Academy"). Defaults to agent config.
-        division: Division filter for Homegrown (e.g. "Northeast"). Defaults to agent config.
-        conference: Conference filter for Academy (e.g. "New England"). Optional.
-        club: Club name filter (e.g. "Intercontinental Football Academy of New England").
-            Filters results to only matches involving this club. Optional.
     """
     from src.scraper.config import ScrapingConfig
     from src.scraper.mls_scraper import MLSScraper
 
-    settings = ctx.deps.settings
     parsed_start = date.fromisoformat(start_date)
     parsed_end = date.fromisoformat(end_date)
 
     look_back = (parsed_end - parsed_start).days
 
     config = ScrapingConfig(
-        age_group=age_group or settings.age_group,
-        league=league or settings.league,
-        division=division or settings.division,
+        age_group=age_group or ctx.age_group,
+        league=league or ctx.league,
+        division=division or ctx.division,
         conference=conference or "",
         club=club or "",
         start_date=parsed_start,
         end_date=parsed_end,
         look_back_days=look_back,
-        missing_table_api_url=settings.missing_table_api_url,
-        missing_table_api_key=settings.missing_table_api_key or "unused",
+        missing_table_api_url=ctx.missing_table_api_url,
+        missing_table_api_key=ctx.missing_table_api_key or "unused",
     )
 
     logger.info(
@@ -175,7 +84,7 @@ async def scrape_matches(
     )
 
     async with _scrape_semaphore:
-        scraper = MLSScraper(config, headless=ctx.deps.headless)
+        scraper = MLSScraper(config, headless=ctx.headless)
         matches = await scraper.scrape_matches()
 
     # For MT backend: division field stores the conference name for Academy league
@@ -207,7 +116,7 @@ async def scrape_matches(
     ]
 
     # Apply team filter if set (e.g. --target u14-hg-ifa)
-    team_filter = ctx.deps.team_filter
+    team_filter = ctx.team_filter
     if team_filter:
         before = len(built)
         built = [m for m in built if team_filter in (m["home_team"], m["away_team"])]
@@ -218,7 +127,7 @@ async def scrape_matches(
             after=len(built),
         )
 
-    ctx.deps._scraped_matches += built
+    ctx._scraped_matches += built
 
     if not matches:
         target = f"{config.age_group} {config.league}"
@@ -228,7 +137,7 @@ async def scrape_matches(
             target += f" {config.division}"
         return f"No matches found for {target} ({start_date} to {end_date})."
 
-    # Build a human-readable summary for the LLM
+    # Build a human-readable summary
     lines = [f"Found {len(matches)} matches ({start_date} to {end_date}):"]
     for m in matches:
         score = f" ({m.home_score}-{m.away_score})" if m.has_score() else ""
@@ -241,7 +150,7 @@ async def scrape_matches(
     return "\n".join(lines)
 
 
-async def submit_matches(ctx: RunContext[AgentDeps]) -> str:
+async def submit_matches(ctx: RunContext) -> str:
     """Submit scraped matches to the RabbitMQ queue for processing.
 
     Publishes all matches from the most recent scrape_matches call. Each match
@@ -250,11 +159,11 @@ async def submit_matches(ctx: RunContext[AgentDeps]) -> str:
 
     Call this after scrape_matches if matches were found.
     """
-    matches = ctx.deps._scraped_matches
+    matches = ctx._scraped_matches
     if not matches:
         return "No matches to submit. Run scrape_matches first."
 
-    if ctx.deps.dry_run:
+    if ctx.dry_run:
         logger.info("tool.submit_matches.dry_run", count=len(matches))
         return f"[DRY RUN] Would submit {len(matches)} matches to queue."
 
@@ -262,12 +171,12 @@ async def submit_matches(ctx: RunContext[AgentDeps]) -> str:
     errors = 0
     for match_dict in matches:
         try:
-            ctx.deps.queue_client.submit_match(match_dict)
+            ctx.queue_client.submit_match(match_dict)
             submitted += 1
         except Exception as exc:
             errors += 1
             match_label = f"{match_dict['home_team']} vs {match_dict['away_team']}"
-            ctx.deps._submission_errors.append({"match": match_label, "error": str(exc)})
+            ctx._submission_errors.append({"match": match_label, "error": str(exc)})
             logger.warning(
                 "tool.submit_matches.error",
                 match=match_label,

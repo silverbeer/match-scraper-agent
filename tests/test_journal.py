@@ -10,7 +10,7 @@ from utils.journal import (
     RunJournal,
     TargetEntry,
     build_journal,
-    format_journal_prompt,
+    format_journal_log,
     read_journal,
     write_journal,
 )
@@ -46,11 +46,9 @@ def _fake_result(
     matches_submitted: int = 5,
 ) -> SimpleNamespace:
     return SimpleNamespace(
-        output=SimpleNamespace(
-            summary=summary,
-            matches_found=matches_found,
-            matches_submitted=matches_submitted,
-        )
+        summary=summary,
+        matches_found=matches_found,
+        matches_submitted=matches_submitted,
     )
 
 
@@ -179,9 +177,9 @@ class TestBuildJournal:
         assert "IFA vs Revolution" in journal.missing_score_matches[0]
 
 
-class TestFormatJournalPrompt:
+class TestFormatJournalLog:
     def test_none_returns_empty(self) -> None:
-        assert format_journal_prompt(None) == ""
+        assert format_journal_log(None) == ""
 
     def test_basic_format(self) -> None:
         journal = RunJournal(
@@ -193,7 +191,7 @@ class TestFormatJournalPrompt:
             total_matches_submitted=42,
             weekend_scores_status="all posted",
         )
-        text = format_journal_prompt(journal)
+        text = format_journal_log(journal)
         assert "Previous Run Journal" in text
         assert "abc123" in text
         assert "42 found" in text
@@ -208,7 +206,7 @@ class TestFormatJournalPrompt:
             run_id="x",
             missing_score_matches=["2026-03-08 IFA vs Revolution (tbd)"],
         )
-        text = format_journal_prompt(journal)
+        text = format_journal_log(journal)
         assert "IFA vs Revolution" in text
 
     def test_caps_missing_scores_at_10(self) -> None:
@@ -217,5 +215,5 @@ class TestFormatJournalPrompt:
             run_id="x",
             missing_score_matches=[f"match {i}" for i in range(15)],
         )
-        text = format_journal_prompt(journal)
+        text = format_journal_log(journal)
         assert "and 5 more" in text

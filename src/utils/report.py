@@ -37,8 +37,8 @@ def build_report(
         actions: List of AgentAction dicts (action, detail, dry_run).
         matches_found: Total matches found by scraper.
         matches_submitted: Total matches submitted to queue.
-        scraped_matches: Raw match dicts from AgentDeps._scraped_matches.
-        submission_errors: Error dicts from AgentDeps._submission_errors.
+        scraped_matches: Raw match dicts from RunContext._scraped_matches.
+        submission_errors: Error dicts from RunContext._submission_errors.
         env: Environment name (local, prod).
         target: Target filter name or None.
         dry_run: Whether this was a dry run.

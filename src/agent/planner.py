@@ -57,21 +57,32 @@ def _target_label(cfg: dict[str, str]) -> str:
 
 
 def _match_weekend_window(today: date) -> tuple[date, date]:
-    """Return the Fri-Mon window around the most recent match weekend.
+    """Return a window covering last weekend through this coming Monday.
 
-    Matches are played Saturday/Sunday; scores post Monday/Tuesday.
-    This window captures the relevant matches without re-scraping the
-    entire remaining season.
+    Covers two weekends:
+    - Last weekend (scores may still be posting)
+    - This weekend (check for schedule changes)
+
+    The window starts on the Friday *before* last weekend and ends on the
+    Monday *after* this weekend.
+
+    Examples (all dates 2026):
+        Friday  Mar 20 -> Mar 13 to Mar 23  (last Fri through this Mon)
+        Monday  Mar 16 -> Mar 13 to Mar 23
+        Wednesday Mar 18 -> Mar 13 to Mar 23
 
     Returns:
-        (friday, monday) dates bracketing the match weekend.
+        (start_friday, end_monday) covering both weekends.
     """
     weekday = today.weekday()  # 0=Mon … 6=Sun
-    # Days since last Friday (Fri=4)
-    days_since_fri = (weekday - 4) % 7
-    friday = today - timedelta(days=days_since_fri)
-    monday = friday + timedelta(days=3)
-    return friday, monday
+    # Find this week's Friday (upcoming or today)
+    days_until_fri = (4 - weekday) % 7
+    this_friday = today + timedelta(days=days_until_fri)
+    # Last Friday is 7 days before this Friday
+    last_friday = this_friday - timedelta(days=7)
+    # Monday after this weekend
+    this_monday = this_friday + timedelta(days=3)
+    return last_friday, this_monday
 
 
 def _mt_key(age_group: str, league: str, division: str) -> tuple[str, str, str]:
@@ -89,25 +100,53 @@ def _cfg_key(cfg: dict[str, str]) -> tuple[str, str, str]:
     return (cfg["age_group"], cfg["league"], cfg.get("division", ""))
 
 
+def _last_weekend(today: date) -> tuple[date, date]:
+    """Return (saturday, sunday) of the most recent past weekend.
+
+    On Sat/Sun returns the current weekend. On Mon-Fri returns last weekend.
+    """
+    weekday = today.weekday()  # 0=Mon … 6=Sun
+    if weekday == 6:  # Sunday
+        return today - timedelta(days=1), today
+    if weekday == 5:  # Saturday
+        return today, today + timedelta(days=1)
+    # Mon-Fri: go back to last Saturday
+    days_since_sat = weekday + 2
+    sat = today - timedelta(days=days_since_sat)
+    return sat, sat + timedelta(days=1)
+
+
 def fetch_mt_status(
     api_url: str,
     api_key: str,
     season: str,
+    today: date | None = None,
 ) -> tuple[list[dict[str, Any]], str]:
     """Call MT match-summary API synchronously.
+
+    Passes last weekend's date range as score_from/score_to so that
+    needs_score only reflects matches from last weekend.
 
     Returns:
         (targets_list, status_string) where status is "ok", "failed:<reason>", or "empty".
     """
     import httpx
 
+    if today is None:
+        today = date.today()
+
+    sat, sun = _last_weekend(today)
     url = f"{api_url}/api/agent/match-summary"
-    logger.info("planner.fetch_mt_status", url=url, season=season)
+    logger.info("planner.fetch_mt_status", url=url, season=season, score_from=sat, score_to=sun)
 
     try:
         resp = httpx.get(
             url,
-            params={"season": season},
+            params={
+                "season": season,
+                "score_from": sat.isoformat(),
+                "score_to": sun.isoformat(),
+            },
             headers={"Authorization": f"Bearer {api_key}"},
             timeout=15.0,
         )
@@ -236,57 +275,3 @@ def compute_scrape_plan(
 
     mt_status = "ok" if mt_targets else ("empty" if mt_targets is not None else "failed")
     return RunPlan(plans=plans, is_weekly_sync=is_weekly, mt_api_status=mt_status)
-
-
-def format_plan_prompt(plan: RunPlan) -> str:
-    """Format the scrape plan as explicit LLM instructions."""
-    lines = [
-        "## Scrape Plan",
-        "",
-        "Follow this plan exactly. Do NOT call get_match_status() — "
-        "the plan is pre-computed from MT data.",
-        "",
-    ]
-
-    step = 0
-    for p in plan.plans:
-        step += 1
-        if p.action == ScrapeAction.SKIP:
-            lines.append(f"{step}. **{p.target_label}: SKIP**")
-            lines.append(f"   Reason: {p.reason}")
-            lines.append("")
-            continue
-
-        action_label = {
-            ScrapeAction.FULL_SYNC: "FULL SYNC",
-            ScrapeAction.SCORE_SYNC: "SCORE SYNC",
-            ScrapeAction.KICKOFF_SYNC: "KICKOFF SYNC",
-        }.get(p.action, p.action.value.upper())
-        lines.append(f"{step}. **{p.target_label}: {action_label}**")
-        lines.append(f"   Reason: {p.reason}")
-
-        # Build exact scrape_matches call params
-        params = [
-            f'start_date="{p.start_date.isoformat()}"' if p.start_date else "",
-            f'end_date="{p.end_date.isoformat()}"' if p.end_date else "",
-        ]
-        cfg = p.scraper_params
-        if cfg.get("age_group"):
-            params.append(f'age_group="{cfg["age_group"]}"')
-        if cfg.get("league"):
-            params.append(f'league="{cfg["league"]}"')
-        if cfg.get("division"):
-            params.append(f'division="{cfg["division"]}"')
-        if cfg.get("conference"):
-            params.append(f'conference="{cfg["conference"]}"')
-
-        param_str = ", ".join(p for p in params if p)
-        lines.append(f"   Call: scrape_matches({param_str})")
-        lines.append("   Then call: submit_matches()")
-        lines.append("")
-
-    skipped = sum(1 for p in plan.plans if p.action == ScrapeAction.SKIP)
-    active = len(plan.plans) - skipped
-    lines.append(f"Summary: {active} targets to scrape, {skipped} skipped.")
-
-    return "\n".join(lines)
