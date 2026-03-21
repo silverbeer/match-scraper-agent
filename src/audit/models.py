@@ -54,5 +54,6 @@ class AuditRunResult(BaseModel):
 class ProcessResult(BaseModel):
     events_processed: int
     matches_resubmitted: int
-    extra_in_mt_flagged: int
+    extra_in_mt_cancelled: int
+    extra_in_mt_skipped: int  # within 7-day window, left alone
     errors: int

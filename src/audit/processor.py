@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any
 
 import structlog
 
 from agent.tools import _current_season
-from audit.client import fetch_pending_events, mark_event_processed
+from audit.client import cancel_match, fetch_pending_events, mark_event_processed
 from audit.models import ProcessResult
 
 if TYPE_CHECKING:
@@ -20,6 +21,10 @@ _RESUBMIT_TYPES = frozenset(
     {"missing_in_mt", "score_mismatch", "status_mismatch", "time_mismatch"}
 )
 
+# extra_in_mt findings older than this are cancelled in MT; newer ones are left alone
+# (matches get rescheduled and mlssoccer.com can lag — give it a full week)
+_CANCEL_THRESHOLD_DAYS = 7
+
 
 async def process_pending_events(
     settings: AgentSettings,
@@ -30,7 +35,8 @@ async def process_pending_events(
 
     - missing_in_mt / score_mismatch / status_mismatch / time_mismatch:
         submit scraped_match to RabbitMQ for MT upsert.
-    - extra_in_mt: log warning only (needs manual review).
+    - extra_in_mt (> 7 days old, no score): cancel in MT automatically.
+    - extra_in_mt (< 7 days old): skip — may be a reschedule in progress.
 
     Returns:
         ProcessResult with counts of actions taken.
@@ -44,8 +50,10 @@ async def process_pending_events(
 
     events_processed = 0
     matches_resubmitted = 0
-    extra_in_mt_flagged = 0
+    extra_in_mt_cancelled = 0
+    extra_in_mt_skipped = 0
     errors = 0
+    cancel_threshold = date.today() - timedelta(days=_CANCEL_THRESHOLD_DAYS)
 
     for event in events:
         try:
@@ -69,16 +77,46 @@ async def process_pending_events(
                             match=f"{finding.home_team} vs {finding.away_team}",
                         )
                 elif finding.finding_type == "extra_in_mt":
-                    extra_in_mt_flagged += 1
-                    logger.warning(
-                        "audit.processor.extra_in_mt",
-                        home_team=finding.home_team,
-                        away_team=finding.away_team,
-                        match_date=finding.match_date,
-                        external_match_id=finding.external_match_id,
-                        team=event.team,
-                        age_group=event.age_group,
-                    )
+                    try:
+                        match_date = date.fromisoformat(finding.match_date)
+                    except ValueError:
+                        logger.warning(
+                            "audit.processor.extra_in_mt.bad_date",
+                            match_date=finding.match_date,
+                        )
+                        extra_in_mt_skipped += 1
+                        continue
+
+                    if match_date < cancel_threshold:
+                        if not dry_run:
+                            await cancel_match(
+                                api_url=settings.missing_table_api_url,
+                                api_key=settings.missing_table_api_key or "",
+                                home_team=finding.home_team,
+                                away_team=finding.away_team,
+                                match_date=finding.match_date,
+                                age_group=event.age_group,
+                                league=event.league,
+                                division=event.division,
+                                season=event.season,
+                            )
+                        extra_in_mt_cancelled += 1
+                        logger.info(
+                            "audit.processor.extra_in_mt.cancelled",
+                            home_team=finding.home_team,
+                            away_team=finding.away_team,
+                            match_date=finding.match_date,
+                            dry_run=dry_run,
+                        )
+                    else:
+                        extra_in_mt_skipped += 1
+                        logger.info(
+                            "audit.processor.extra_in_mt.skipped",
+                            home_team=finding.home_team,
+                            away_team=finding.away_team,
+                            match_date=finding.match_date,
+                            reason="within_7_day_window",
+                        )
 
             if not dry_run:
                 await mark_event_processed(
@@ -101,13 +139,15 @@ async def process_pending_events(
         "audit.processor.done",
         events_processed=events_processed,
         matches_resubmitted=matches_resubmitted,
-        extra_in_mt_flagged=extra_in_mt_flagged,
+        extra_in_mt_cancelled=extra_in_mt_cancelled,
+        extra_in_mt_skipped=extra_in_mt_skipped,
         errors=errors,
     )
 
     return ProcessResult(
         events_processed=events_processed,
         matches_resubmitted=matches_resubmitted,
-        extra_in_mt_flagged=extra_in_mt_flagged,
+        extra_in_mt_cancelled=extra_in_mt_cancelled,
+        extra_in_mt_skipped=extra_in_mt_skipped,
         errors=errors,
     )

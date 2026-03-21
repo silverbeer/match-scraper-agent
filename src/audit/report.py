@@ -56,18 +56,20 @@ def build_audit_report(result: AuditRunResult, env: str) -> str:
 def build_processor_report(result: ProcessResult, env: str) -> str:
     """Build a MarkdownV2 processor report for Telegram.
 
-    Only called when matches were resubmitted or extra_in_mt were flagged.
+    Only called when matches were resubmitted or extra_in_mt were acted on.
     """
     lines: list[str] = []
     lines.append("*Audit Processor Report*")
     lines.append(f"_{escape(env)}_")
     lines.append("")
 
-    lines.append(
-        f"*Events processed:* {escape(str(result.events_processed))} · "
-        f"*Resubmitted:* {escape(str(result.matches_resubmitted))} · "
-        f"*Flagged extra:* {escape(str(result.extra_in_mt_flagged))}"
-    )
+    parts = [
+        f"*Corrected:* {escape(str(result.matches_resubmitted))}",
+        f"*Cancelled:* {escape(str(result.extra_in_mt_cancelled))}",
+    ]
+    if result.extra_in_mt_skipped:
+        parts.append(f"*Pending \\(< 7d\\):* {escape(str(result.extra_in_mt_skipped))}")
+    lines.append(" · ".join(parts))
 
     if result.errors:
         lines.append(f"*Errors:* {escape(str(result.errors))}")
