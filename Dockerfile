@@ -20,7 +20,7 @@ RUN uv sync --no-dev --no-install-project
 RUN uv run playwright install chromium
 
 COPY src/ src/
-COPY agent.md CLAUDE.md ./
+COPY CLAUDE.md ./
 RUN uv sync --no-dev
 
 ENTRYPOINT ["uv", "run", "match-scraper-agent"]
