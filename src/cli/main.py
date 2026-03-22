@@ -579,7 +579,7 @@ def audit(
         str | None,
         typer.Option(
             "--team", help="Audit a specific team (skips rotation). Requires --age-group."
-        ),  # noqa: E501
+        ),
     ] = None,
     age_group: Annotated[
         str | None,
