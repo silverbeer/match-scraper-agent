@@ -575,8 +575,14 @@ def audit(
     env: Annotated[str, typer.Option("--env", help="Environment name (local, prod)")] = "local",
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Skip mutating operations")] = False,
     json_logs: Annotated[bool, typer.Option("--json-logs", help="Output JSON log lines")] = False,
-    team: Annotated[str | None, typer.Option("--team", help="Audit a specific team (skips rotation). Requires --age-group.")] = None,
-    age_group: Annotated[str | None, typer.Option("--age-group", help="Age group for --team override (e.g. U14)")] = None,
+    team: Annotated[
+        str | None,
+        typer.Option("--team", help="Audit a specific team (skips rotation). Requires --age-group."),  # noqa: E501
+    ] = None,
+    age_group: Annotated[
+        str | None,
+        typer.Option("--age-group", help="Age group for --team override (e.g. U14)"),
+    ] = None,
 ) -> None:
     """Audit one team against mlssoccer.com source of truth."""
     import asyncio
