@@ -9,7 +9,7 @@ import structlog
 
 from agent.tools import _current_season
 from audit.client import cancel_match, fetch_pending_events, mark_event_processed
-from audit.models import ProcessResult
+from audit.models import CancelledMatch, ProcessResult
 
 if TYPE_CHECKING:
     from config.settings import AgentSettings
@@ -50,7 +50,9 @@ async def process_pending_events(
 
     events_processed = 0
     matches_resubmitted = 0
+    corrections_by_type: dict[str, int] = {}
     extra_in_mt_cancelled = 0
+    cancelled_matches: list[CancelledMatch] = []
     extra_in_mt_skipped = 0
     errors = 0
     cancel_threshold = date.today() - timedelta(days=_CANCEL_THRESHOLD_DAYS)
@@ -63,6 +65,9 @@ async def process_pending_events(
                         if not dry_run:
                             queue_client.submit_match(finding.scraped_match)
                         matches_resubmitted += 1
+                        corrections_by_type[finding.finding_type] = (
+                            corrections_by_type.get(finding.finding_type, 0) + 1
+                        )
                         logger.info(
                             "audit.processor.resubmit",
                             finding_type=finding.finding_type,
@@ -101,6 +106,15 @@ async def process_pending_events(
                                 season=event.season,
                             )
                         extra_in_mt_cancelled += 1
+                        cancelled_matches.append(
+                            CancelledMatch(
+                                home_team=finding.home_team,
+                                away_team=finding.away_team,
+                                match_date=finding.match_date,
+                                team=event.team,
+                                age_group=event.age_group,
+                            )
+                        )
                         logger.info(
                             "audit.processor.extra_in_mt.cancelled",
                             home_team=finding.home_team,
@@ -147,7 +161,9 @@ async def process_pending_events(
     return ProcessResult(
         events_processed=events_processed,
         matches_resubmitted=matches_resubmitted,
+        corrections_by_type=corrections_by_type,
         extra_in_mt_cancelled=extra_in_mt_cancelled,
+        cancelled_matches=cancelled_matches,
         extra_in_mt_skipped=extra_in_mt_skipped,
         errors=errors,
     )

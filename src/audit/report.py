@@ -63,13 +63,27 @@ def build_processor_report(result: ProcessResult, env: str) -> str:
     lines.append(f"_{escape(env)}_")
     lines.append("")
 
-    parts = [
-        f"*Corrected:* {escape(str(result.matches_resubmitted))}",
-        f"*Cancelled:* {escape(str(result.extra_in_mt_cancelled))}",
-    ]
+    if result.matches_resubmitted:
+        type_breakdown = " · ".join(
+            f"{escape(ftype.replace('_', ' ').title())} \\({escape(str(count))}\\)"
+            for ftype, count in sorted(result.corrections_by_type.items())
+        )
+        corrected_line = f"*Corrected:* {escape(str(result.matches_resubmitted))}"
+        if type_breakdown:
+            corrected_line += f" — {type_breakdown}"
+        lines.append(corrected_line)
+
+    if result.extra_in_mt_cancelled:
+        lines.append(f"*Cancelled in MT \\({escape(str(result.extra_in_mt_cancelled))}\\):*")
+        for m in result.cancelled_matches:
+            home = escape(m.home_team)
+            away = escape(m.away_team)
+            md = escape(m.match_date)
+            label = escape(f"{m.team} {m.age_group}")
+            lines.append(f"  • {md} {home} vs {away} _{label}_")
+
     if result.extra_in_mt_skipped:
-        parts.append(f"*Pending \\(< 7d\\):* {escape(str(result.extra_in_mt_skipped))}")
-    lines.append(" · ".join(parts))
+        lines.append(f"*Pending \\(< 7d\\):* {escape(str(result.extra_in_mt_skipped))}")
 
     if result.errors:
         lines.append(f"*Errors:* {escape(str(result.errors))}")
