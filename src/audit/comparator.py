@@ -73,6 +73,33 @@ def compare_matches(
         matched_mt_indices.add(mt_idx)
         mt_m = mt_matches[mt_idx]
 
+        # Home/away swap — only detectable when matched by external_match_id
+        # (key-based match already requires home+away+date to agree)
+        scraped_home = scraped_m.get("home_team", "")
+        scraped_away = scraped_m.get("away_team", "")
+        mt_home = mt_m.get("home_team", "")
+        mt_away = mt_m.get("away_team", "")
+        if (
+            ext_id
+            and ext_id in mt_by_id
+            and scraped_home != mt_home
+            and scraped_home == mt_away
+            and scraped_away == mt_home
+        ):
+            findings.append(
+                AuditFinding(
+                    finding_type="home_away_mismatch",
+                    home_team=scraped_home,
+                    away_team=scraped_away,
+                    match_date=scraped_m.get("match_date", ""),
+                    external_match_id=ext_id,
+                    field="home_away",
+                    scraped_value=f"{scraped_home} (home)",
+                    mt_value=f"{mt_home} (home)",
+                    scraped_match=scraped_m,
+                )
+            )
+
         # Score mismatch — only flag when scraped has a score
         scraped_hs = scraped_m.get("home_score")
         scraped_as = scraped_m.get("away_score")

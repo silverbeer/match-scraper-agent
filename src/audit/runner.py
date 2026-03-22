@@ -24,8 +24,13 @@ async def run_one_team_audit(
     dry_run: bool,
     season_start: date,
     season_end: date,
+    team_override: str | None = None,
+    age_group_override: str | None = None,
 ) -> AuditRunResult | None:
     """Audit one team: scrape mlssoccer.com, compare against MT, submit findings.
+
+    If team_override and age_group_override are provided, audit that specific team
+    instead of fetching the next team from the rotation.
 
     Returns:
         AuditRunResult if a team was audited, None if all teams are up-to-date.
@@ -37,22 +42,35 @@ async def run_one_team_audit(
     audit_run_id = uuid.uuid4().hex[:12]
     event_id = uuid.uuid4().hex[:12]
 
-    # Step 1: Fetch next team to audit (least recently audited)
-    next_team = await fetch_next_team(
-        api_url=settings.missing_table_api_url,
-        api_key=settings.missing_table_api_key or "",
-        season=season,
-        division="Northeast",
-        league="Homegrown",
-    )
-    if next_team is None:
-        logger.info("audit.runner.all_current")
-        return None
+    if team_override and age_group_override:
+        # Targeted audit — skip rotation
+        team = team_override
+        age_group = age_group_override
+        league = settings.league
+        division = settings.division
+        logger.info(
+            "audit.runner.team_override",
+            team=team,
+            age_group=age_group,
+            audit_run_id=audit_run_id,
+        )
+    else:
+        # Step 1: Fetch next team to audit (least recently audited)
+        next_team = await fetch_next_team(
+            api_url=settings.missing_table_api_url,
+            api_key=settings.missing_table_api_key or "",
+            season=season,
+            division="Northeast",
+            league="Homegrown",
+        )
+        if next_team is None:
+            logger.info("audit.runner.all_current")
+            return None
 
-    team = next_team.team
-    age_group = next_team.age_group
-    league = next_team.league
-    division = next_team.division
+        team = next_team.team
+        age_group = next_team.age_group
+        league = next_team.league
+        division = next_team.division
     logger.info(
         "audit.runner.team_selected",
         team=team,

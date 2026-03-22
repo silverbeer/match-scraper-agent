@@ -9,7 +9,12 @@ from pydantic import BaseModel
 
 class AuditFinding(BaseModel):
     finding_type: Literal[
-        "missing_in_mt", "extra_in_mt", "score_mismatch", "status_mismatch", "time_mismatch"
+        "missing_in_mt",
+        "extra_in_mt",
+        "score_mismatch",
+        "status_mismatch",
+        "time_mismatch",
+        "home_away_mismatch",
     ]
     home_team: str
     away_team: str

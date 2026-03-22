@@ -575,6 +575,8 @@ def audit(
     env: Annotated[str, typer.Option("--env", help="Environment name (local, prod)")] = "local",
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Skip mutating operations")] = False,
     json_logs: Annotated[bool, typer.Option("--json-logs", help="Output JSON log lines")] = False,
+    team: Annotated[str | None, typer.Option("--team", help="Audit a specific team (skips rotation). Requires --age-group.")] = None,
+    age_group: Annotated[str | None, typer.Option("--age-group", help="Age group for --team override (e.g. U14)")] = None,
 ) -> None:
     """Audit one team against mlssoccer.com source of truth."""
     import asyncio
@@ -598,6 +600,10 @@ def audit(
 
     from agent.tools import SEASON_END
 
+    if bool(team) != bool(age_group):
+        typer.echo("--team and --age-group must be used together", err=True)
+        raise typer.Exit(code=1)
+
     try:
         result = asyncio.run(
             run_one_team_audit(
@@ -605,6 +611,8 @@ def audit(
                 dry_run=dry_run,
                 season_start=season_start,
                 season_end=SEASON_END,
+                team_override=team,
+                age_group_override=age_group,
             )
         )
     except Exception as exc:
