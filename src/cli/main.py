@@ -577,7 +577,9 @@ def audit(
     json_logs: Annotated[bool, typer.Option("--json-logs", help="Output JSON log lines")] = False,
     team: Annotated[
         str | None,
-        typer.Option("--team", help="Audit a specific team (skips rotation). Requires --age-group."),  # noqa: E501
+        typer.Option(
+            "--team", help="Audit a specific team (skips rotation). Requires --age-group."
+        ),  # noqa: E501
     ] = None,
     age_group: Annotated[
         str | None,
