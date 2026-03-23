@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC
 from typing import TYPE_CHECKING, Annotated, Any
 
 import structlog
@@ -698,3 +699,93 @@ def audit_process(
         _send_telegram_processor_report(settings=settings, result=result, env=env)
 
     structlog.contextvars.unbind_contextvars("run_id", "env")
+
+
+@app.command(name="audit-report")
+def audit_report(
+    env: Annotated[str, typer.Option("--env", help="Environment name (local, prod)")] = "local",
+) -> None:
+    """Show audit coverage for all HG Northeast teams across all age groups."""
+    import asyncio
+    from datetime import date, datetime
+
+    from agent.tools import _current_season
+    from audit.client import fetch_audit_team_status
+    from config.settings import AgentSettings, env_file_path
+
+    settings = AgentSettings(_env_file=env_file_path(env))
+    season = _current_season()
+    today = date.today()
+
+    age_groups = ["U13", "U14", "U15", "U16"]
+    league = "Homegrown"
+    division = "Northeast"
+    overdue_days = 7
+
+    teams = asyncio.run(
+        fetch_audit_team_status(
+            api_url=settings.missing_table_api_url,
+            api_key=settings.missing_table_api_key or "",
+            season=season,
+            league=league,
+            division=division,
+        )
+    )
+
+    by_ag: dict[str, list] = {ag: [] for ag in age_groups}
+    for t in teams:
+        if t.age_group in by_ag:
+            by_ag[t.age_group].append(t)
+
+    typer.echo(f"\nAudit Progress — HG {division} — {season}")
+    typer.echo(f"Generated: {today}  |  Overdue threshold: >{overdue_days} days\n")
+
+    col_ag = 10
+    col_team = 34
+    col_date = 13
+    col_days = 6
+    col_findings = 10
+    header = (
+        f"{'AGE GRP':<{col_ag}}{'TEAM':<{col_team}}"
+        f"{'LAST AUDITED':<{col_date}}{'DAYS':>{col_days}}"
+        f"{'FINDINGS':>{col_findings}}  STATUS"
+    )
+    separator = "-" * len(header)
+    typer.echo(header)
+    typer.echo(separator)
+
+    total = audited_week = overdue_count = never_count = 0
+
+    for ag in age_groups:
+        for t in sorted(by_ag[ag], key=lambda x: x.team):
+            total += 1
+            if t.last_audited_at:
+                dt = datetime.fromisoformat(t.last_audited_at).replace(tzinfo=UTC)
+                days_ago = (today - dt.date()).days
+                date_str = dt.date().isoformat()
+                days_str = str(days_ago)
+                findings_str = str(t.findings_count) if t.findings_count else "-"
+                if days_ago <= overdue_days:
+                    status = "OK"
+                    audited_week += 1
+                else:
+                    status = "OVERDUE"
+                    overdue_count += 1
+            else:
+                date_str = "never"
+                days_str = "-"
+                findings_str = "-"
+                status = "PENDING"
+                never_count += 1
+
+            typer.echo(
+                f"{ag:<{col_ag}}{t.team:<{col_team}}"
+                f"{date_str:<{col_date}}{days_str:>{col_days}}"
+                f"{findings_str:>{col_findings}}  {status}"
+            )
+
+    typer.echo(separator)
+    typer.echo(
+        f"\nTotal: {total}  |  Audited this week: {audited_week}"
+        f"  |  Overdue: {overdue_count}  |  Pending: {never_count}\n"
+    )

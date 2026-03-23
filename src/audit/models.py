@@ -36,6 +36,7 @@ class AuditEvent(BaseModel):
     season: str
     findings: list[AuditFinding]
     status: Literal["pending", "processed", "ignored"] = "pending"
+    created_at: str | None = None  # ISO timestamp set by MT on insert
 
 
 class NextTeamResponse(BaseModel):
@@ -54,6 +55,19 @@ class AuditRunResult(BaseModel):
     mt_count: int
     findings: list[AuditFinding]
     dry_run: bool = False
+
+
+class AuditTeamStatus(BaseModel):
+    """Per-team audit status record returned by /api/agent/audit/teams."""
+
+    team: str
+    age_group: str
+    league: str
+    division: str
+    season: str
+    last_audited_at: str | None = None
+    last_audit_status: str | None = None
+    findings_count: int = 0
 
 
 class CancelledMatch(BaseModel):

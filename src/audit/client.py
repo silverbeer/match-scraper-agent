@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 import httpx
 import structlog
 
-from audit.models import AuditEvent, NextTeamResponse
+from audit.models import AuditEvent, AuditTeamStatus, NextTeamResponse
 
 logger = structlog.get_logger()
 
@@ -156,6 +156,28 @@ async def cancel_match(
         match_date=match_date,
     )
     return True
+
+
+async def fetch_audit_team_status(
+    api_url: str,
+    api_key: str,
+    season: str,
+    league: str,
+    division: str,
+) -> list[AuditTeamStatus]:
+    """Fetch all teams with their audit status for a given league/division/season."""
+    url = f"{api_url}/api/agent/audit/teams"
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.get(
+            url,
+            params={"season": season, "league": league, "division": division},
+            headers=_headers(api_key),
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    teams = [AuditTeamStatus.model_validate(t) for t in data.get("teams", [])]
+    logger.info("audit.client.fetch_audit_team_status", count=len(teams))
+    return teams
 
 
 async def mark_event_processed(
