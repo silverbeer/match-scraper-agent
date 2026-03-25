@@ -162,8 +162,6 @@ def _build_summary(found: int, submitted: int, plan: RunPlan) -> str:
     skipped = sum(1 for p in plan.plans if p.action == ScrapeAction.SKIP)
     parts = [f"{active} targets scraped, {skipped} skipped"]
     parts.append(f"{found} matches found, {submitted} submitted")
-    if plan.is_weekly_sync:
-        parts.append("weekly full sync")
     return " — ".join(parts)
 
 
