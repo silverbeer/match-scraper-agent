@@ -11,6 +11,7 @@ dependencies = [
     "structlog>=24.0",
     "httpx>=0.28",
     "telegram-notify @ git+https://github.com/silverbeer/telegram-notify.git",
+    "resend>=2.0",
 ]
 
 [project.scripts]
