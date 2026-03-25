@@ -110,12 +110,14 @@ def _send_email_alert(settings: AgentSettings, subject: str, body: str) -> None:
 
     resend.api_key = settings.resend_api_key
     try:
-        resend.Emails.send({
-            "from": settings.alert_email_from,
-            "to": settings.alert_email_to,
-            "subject": subject,
-            "text": body,
-        })
+        resend.Emails.send(
+            {
+                "from": settings.alert_email_from,
+                "to": settings.alert_email_to,
+                "subject": subject,
+                "text": body,
+            }
+        )
         logger.info("email_alert.sent", to=settings.alert_email_to)
     except Exception as exc:
         logger.error("email_alert.failed", error=str(exc))
