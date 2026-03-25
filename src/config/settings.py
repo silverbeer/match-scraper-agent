@@ -54,6 +54,11 @@ class AgentSettings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
+    # Resend email fallback (used when Telegram fails)
+    resend_api_key: str = ""
+    alert_email_from: str = "contact@missingtable.com"
+    alert_email_to: str = "silverbeer.io@gmail.com"
+
     # Audit settings
     audit_season_start: str = "2026-02-01"  # Spring segment start date
 

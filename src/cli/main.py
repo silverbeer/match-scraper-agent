@@ -100,6 +100,29 @@ def _queue_client_kwargs(settings: AgentSettings) -> dict[str, str]:
     return kwargs
 
 
+def _send_email_alert(settings: AgentSettings, subject: str, body: str) -> None:
+    """Send a plain-text email via Resend. No-op if not configured."""
+    if not settings.resend_api_key:
+        logger.debug("email_alert.skipped", reason="resend_api_key not configured")
+        return
+
+    import resend
+
+    resend.api_key = settings.resend_api_key
+    try:
+        resend.Emails.send(
+            {
+                "from": settings.alert_email_from,
+                "to": settings.alert_email_to,
+                "subject": subject,
+                "text": body,
+            }
+        )
+        logger.info("email_alert.sent", to=settings.alert_email_to)
+    except Exception as exc:
+        logger.error("email_alert.failed", error=str(exc))
+
+
 def _send_telegram_report(
     settings: AgentSettings,
     result: Any,
@@ -139,6 +162,11 @@ def _send_telegram_report(
         logger.info("telegram.sent", chat_id=settings.telegram_chat_id)
     except Exception as exc:
         logger.warning("telegram.failed", error=str(exc))
+        _send_email_alert(
+            settings,
+            subject="[match-scraper-agent] Telegram failed — run report",
+            body=f"Telegram notification failed: {exc}\n\n{report}",
+        )
 
 
 @app.command()
@@ -536,6 +564,11 @@ def _send_telegram_audit_report(
         logger.info("telegram.sent", chat_id=settings.telegram_chat_id)
     except Exception as exc:
         logger.warning("telegram.failed", error=str(exc))
+        _send_email_alert(
+            settings,
+            subject="[match-scraper-agent] Telegram failed — audit report",
+            body=f"Telegram notification failed: {exc}\n\n{report}",
+        )
 
 
 def _send_telegram_processor_report(
@@ -562,6 +595,11 @@ def _send_telegram_processor_report(
         logger.info("telegram.sent", chat_id=settings.telegram_chat_id)
     except Exception as exc:
         logger.warning("telegram.failed", error=str(exc))
+        _send_email_alert(
+            settings,
+            subject="[match-scraper-agent] Telegram failed — processor report",
+            body=f"Telegram notification failed: {exc}\n\n{report}",
+        )
 
 
 @app.command()
