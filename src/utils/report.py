@@ -95,7 +95,9 @@ def build_report(
     for action in actions:
         prefix = escape("[DRY RUN] ") if action.get("dry_run") else ""
         icon = _action_icon(action.get("action", ""))
-        detail = escape(action.get("detail", ""))
+        # Use only the first line — full match list lives in the pod logs
+        detail_str = action.get("detail", "")
+        detail = escape(detail_str.split("\n")[0])
         lines.append(f"{icon} {prefix}{detail}")
 
     if not actions:
