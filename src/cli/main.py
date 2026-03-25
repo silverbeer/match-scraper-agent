@@ -224,11 +224,7 @@ def run(
             # Full run — compute scrape plan from MT data
             from datetime import UTC, datetime
 
-            from agent.planner import (
-                compute_scrape_plan,
-                fetch_mt_status,
-                is_weekly_sync_run,
-            )
+            from agent.planner import compute_scrape_plan, fetch_mt_status
             from agent.tools import SEASON_END, _current_season
 
             now_utc = datetime.now(tz=UTC)
@@ -247,19 +243,16 @@ def run(
                 )
                 raise typer.Exit(code=1)
 
-            weekly = is_weekly_sync_run(now_utc)
             plan = compute_scrape_plan(
                 mt_targets=mt_targets,
                 target_configs=_TARGET_SCRAPER_CONFIG,
                 today=now_utc.date(),
                 season_end=SEASON_END,
-                is_weekly=weekly,
             )
             ctx._scrape_plan = plan
 
             logger.info(
                 "planner.computed",
-                weekly=weekly,
                 mt_status=mt_status_str,
                 full_sync=sum(1 for p in plan.plans if p.action.value == "full_sync"),
                 score_sync=sum(1 for p in plan.plans if p.action.value == "score_sync"),
@@ -586,8 +579,12 @@ def audit(
         str | None,
         typer.Option("--age-group", help="Age group for --team override (e.g. U14)"),
     ] = None,
+    count: Annotated[
+        int,
+        typer.Option("--count", help="Max teams to audit per run (rotation). Default: 1."),
+    ] = 1,
 ) -> None:
-    """Audit one team against mlssoccer.com source of truth."""
+    """Audit teams against mlssoccer.com source of truth."""
     import asyncio
     from datetime import date
 
@@ -613,25 +610,32 @@ def audit(
         typer.echo("--team and --age-group must be used together", err=True)
         raise typer.Exit(code=1)
 
-    try:
-        result = asyncio.run(
-            run_one_team_audit(
-                settings=settings,
-                dry_run=dry_run,
-                season_start=season_start,
-                season_end=SEASON_END,
-                team_override=team,
-                age_group_override=age_group,
-            )
-        )
-    except Exception as exc:
-        logger.error("audit.failed", error=str(exc), exc_info=exc)
-        raise typer.Exit(code=1) from None
+    # When a specific team is requested, ignore --count and run exactly once
+    max_iterations = 1 if (team and age_group) else count
 
-    if result is None:
-        logger.info("audit.all_teams_current")
-        typer.echo("All teams are up-to-date. Nothing to audit.")
-    else:
+    audited = 0
+    for _ in range(max_iterations):
+        try:
+            result = asyncio.run(
+                run_one_team_audit(
+                    settings=settings,
+                    dry_run=dry_run,
+                    season_start=season_start,
+                    season_end=SEASON_END,
+                    team_override=team,
+                    age_group_override=age_group,
+                )
+            )
+        except Exception as exc:
+            logger.error("audit.failed", error=str(exc), exc_info=exc)
+            raise typer.Exit(code=1) from None
+
+        if result is None:
+            logger.info("audit.all_teams_current")
+            typer.echo("All teams are up-to-date. Nothing to audit.")
+            break
+
+        audited += 1
         logger.info(
             "audit.completed",
             team=result.team,
@@ -647,6 +651,9 @@ def audit(
         )
         if result.findings:
             _send_telegram_audit_report(settings=settings, result=result, env=env)
+
+    if audited > 1:
+        logger.info("audit.batch_done", audited=audited)
 
     structlog.contextvars.unbind_contextvars("run_id", "env")
 

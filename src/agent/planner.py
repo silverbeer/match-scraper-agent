@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -38,13 +38,7 @@ class RunPlan(BaseModel):
     """Full scrape plan for all targets in a single run."""
 
     plans: list[ScrapePlan] = []
-    is_weekly_sync: bool = False
     mt_api_status: str = ""  # "ok", "failed:<reason>", "empty"
-
-
-def is_weekly_sync_run(now: datetime) -> bool:
-    """Monday 02:00-03:00 UTC = weekly full sync window."""
-    return now.weekday() == 0 and now.hour in (2, 3)
 
 
 def _target_label(cfg: dict[str, str]) -> str:
@@ -169,7 +163,6 @@ def compute_scrape_plan(
     target_configs: dict[str, dict[str, str]],
     today: date,
     season_end: date,
-    is_weekly: bool,
 ) -> RunPlan:
     """Compute a deterministic scrape plan for all non-IFA targets.
 
@@ -178,7 +171,6 @@ def compute_scrape_plan(
         target_configs: The _TARGET_SCRAPER_CONFIG dict from main.py.
         today: Today's date.
         season_end: Season end date (SEASON_END constant).
-        is_weekly: True for the Monday 02:00 UTC weekly full-sync run.
     """
     # Build lookup: (age_group, league, division) → MT target data
     mt_lookup: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -194,20 +186,6 @@ def compute_scrape_plan(
         label = _target_label(cfg)
         lookup_key = _cfg_key(cfg)
         mt_data = mt_lookup.get(lookup_key)
-
-        if is_weekly:
-            plans.append(
-                ScrapePlan(
-                    target_key=target_key,
-                    target_label=label,
-                    action=ScrapeAction.FULL_SYNC,
-                    start_date=today,
-                    end_date=season_end,
-                    reason="Weekly full sync (Monday)",
-                    scraper_params=cfg,
-                )
-            )
-            continue
 
         if mt_data is None or mt_data.get("total", 0) == 0:
             plans.append(
@@ -274,4 +252,4 @@ def compute_scrape_plan(
         )
 
     mt_status = "ok" if mt_targets else ("empty" if mt_targets is not None else "failed")
-    return RunPlan(plans=plans, is_weekly_sync=is_weekly, mt_api_status=mt_status)
+    return RunPlan(plans=plans, mt_api_status=mt_status)
