@@ -8,7 +8,7 @@ import structlog
 
 from agent.tools import _current_season
 from audit.client import fetch_pending_events, mark_event_processed
-from audit.models import ProcessResult
+from audit.models import ExtraInMtMatch, ProcessResult
 
 if TYPE_CHECKING:
     from config.settings import AgentSettings
@@ -46,6 +46,7 @@ async def process_pending_events(
     matches_resubmitted = 0
     corrections_by_type: dict[str, int] = {}
     extra_in_mt_skipped = 0
+    extra_in_mt_findings: list[ExtraInMtMatch] = []
     errors = 0
 
     for event in events:
@@ -77,6 +78,15 @@ async def process_pending_events(
                     # A transient scraper failure (selector bug, site lag) would otherwise
                     # silently delete legitimate matches with no recovery path.
                     extra_in_mt_skipped += 1
+                    extra_in_mt_findings.append(
+                        ExtraInMtMatch(
+                            home_team=finding.home_team,
+                            away_team=finding.away_team,
+                            match_date=finding.match_date,
+                            team=event.team,
+                            age_group=event.age_group,
+                        )
+                    )
                     logger.info(
                         "audit.processor.extra_in_mt.skipped",
                         home_team=finding.home_team,
@@ -115,5 +125,6 @@ async def process_pending_events(
         matches_resubmitted=matches_resubmitted,
         corrections_by_type=corrections_by_type,
         extra_in_mt_skipped=extra_in_mt_skipped,
+        extra_in_mt_findings=extra_in_mt_findings,
         errors=errors,
     )
