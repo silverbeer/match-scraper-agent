@@ -74,11 +74,24 @@ def build_processor_report(result: ProcessResult, env: str) -> str:
         lines.append(corrected_line)
 
     if result.extra_in_mt_skipped:
+        lines.append("")
+        lines.append("⚠️ *MANUAL REVIEW REQUIRED* ⚠️")
         lines.append(
-            f"*Extra in MT \\(review required\\):* {escape(str(result.extra_in_mt_skipped))}"
+            f"*{escape(str(result.extra_in_mt_skipped))} match"
+            f"{'es' if result.extra_in_mt_skipped != 1 else ''}"
+            f" found in MT but NOT on mlssoccer\\.com*"
         )
+        lines.append("_Do NOT cancel without verifying — may be a scraper bug\\._")
+        lines.append("")
+        for m in result.extra_in_mt_findings:
+            home = escape(m.home_team)
+            away = escape(m.away_team)
+            md = escape(m.match_date)
+            label = escape(f"{m.team} {m.age_group}")
+            lines.append(f"  • {md} {home} vs {away} _{label}_")
 
     if result.errors:
+        lines.append("")
         lines.append(f"*Errors:* {escape(str(result.errors))}")
 
     return "\n".join(lines)
