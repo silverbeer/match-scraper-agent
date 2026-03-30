@@ -116,7 +116,6 @@ async def fetch_pending_events(
     return events
 
 
-
 async def fetch_audit_team_status(
     api_url: str,
     api_key: str,
