@@ -116,47 +116,6 @@ async def fetch_pending_events(
     return events
 
 
-async def cancel_match(
-    api_url: str,
-    api_key: str,
-    home_team: str,
-    away_team: str,
-    match_date: str,
-    age_group: str,
-    league: str,
-    division: str,
-    season: str,
-) -> bool:
-    """Mark a match as cancelled in MT. Returns True if found and cancelled."""
-    url = f"{api_url}/api/agent/matches/cancel"
-    payload = {
-        "home_team": home_team,
-        "away_team": away_team,
-        "match_date": match_date,
-        "age_group": age_group,
-        "league": league,
-        "division": division,
-        "season": season,
-    }
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.patch(url, json=payload, headers=_headers(api_key))
-        if resp.status_code == 404:
-            logger.warning(
-                "audit.client.cancel_match.not_found",
-                home_team=home_team,
-                away_team=away_team,
-                match_date=match_date,
-            )
-            return False
-        resp.raise_for_status()
-    logger.info(
-        "audit.client.cancel_match",
-        home_team=home_team,
-        away_team=away_team,
-        match_date=match_date,
-    )
-    return True
-
 
 async def fetch_audit_team_status(
     api_url: str,

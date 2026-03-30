@@ -736,12 +736,11 @@ def audit_process(
         "audit_process.completed",
         events_processed=result.events_processed,
         matches_resubmitted=result.matches_resubmitted,
-        extra_in_mt_cancelled=result.extra_in_mt_cancelled,
         extra_in_mt_skipped=result.extra_in_mt_skipped,
         errors=result.errors,
     )
 
-    if result.matches_resubmitted or result.extra_in_mt_cancelled:
+    if result.matches_resubmitted:
         _send_telegram_processor_report(settings=settings, result=result, env=env)
 
     structlog.contextvars.unbind_contextvars("run_id", "env")

@@ -56,7 +56,7 @@ def build_audit_report(result: AuditRunResult, env: str) -> str:
 def build_processor_report(result: ProcessResult, env: str) -> str:
     """Build a MarkdownV2 processor report for Telegram.
 
-    Only called when matches were resubmitted or extra_in_mt were acted on.
+    Only called when matches were resubmitted.
     """
     lines: list[str] = []
     lines.append("*Audit Processor Report*")
@@ -73,17 +73,10 @@ def build_processor_report(result: ProcessResult, env: str) -> str:
             corrected_line += f" — {type_breakdown}"
         lines.append(corrected_line)
 
-    if result.extra_in_mt_cancelled:
-        lines.append(f"*Cancelled in MT \\({escape(str(result.extra_in_mt_cancelled))}\\):*")
-        for m in result.cancelled_matches:
-            home = escape(m.home_team)
-            away = escape(m.away_team)
-            md = escape(m.match_date)
-            label = escape(f"{m.team} {m.age_group}")
-            lines.append(f"  • {md} {home} vs {away} _{label}_")
-
     if result.extra_in_mt_skipped:
-        lines.append(f"*Pending \\(< 7d\\):* {escape(str(result.extra_in_mt_skipped))}")
+        lines.append(
+            f"*Extra in MT \\(review required\\):* {escape(str(result.extra_in_mt_skipped))}"
+        )
 
     if result.errors:
         lines.append(f"*Errors:* {escape(str(result.errors))}")
