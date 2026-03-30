@@ -743,7 +743,7 @@ def audit_process(
         errors=result.errors,
     )
 
-    if result.matches_resubmitted:
+    if result.matches_resubmitted or result.extra_in_mt_skipped:
         _send_telegram_processor_report(settings=settings, result=result, env=env)
 
     structlog.contextvars.unbind_contextvars("run_id", "env")
