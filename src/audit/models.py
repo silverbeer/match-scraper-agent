@@ -70,19 +70,9 @@ class AuditTeamStatus(BaseModel):
     findings_count: int = 0
 
 
-class CancelledMatch(BaseModel):
-    home_team: str
-    away_team: str
-    match_date: str
-    team: str  # the audited team this finding belongs to
-    age_group: str
-
-
 class ProcessResult(BaseModel):
     events_processed: int
     matches_resubmitted: int
     corrections_by_type: dict[str, int] = {}  # finding_type -> count of resubmitted matches
-    extra_in_mt_cancelled: int
-    cancelled_matches: list[CancelledMatch] = []  # full detail for Telegram report
-    extra_in_mt_skipped: int  # within 7-day window, left alone
+    extra_in_mt_skipped: int  # queued for human review, not auto-cancelled
     errors: int

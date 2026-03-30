@@ -107,8 +107,11 @@ async def run_one_team_audit(
             "match_date": m.match_datetime.date().isoformat(),
             # Omit match_time when unknown — prevents overwriting an existing
             # MT kick-off time with null (MLS Next drops time on completed matches)
-            **( {"match_time": m.match_datetime.strftime("%H:%M")}
-                if m.match_datetime.hour or m.match_datetime.minute else {} ),
+            **(
+                {"match_time": m.match_datetime.strftime("%H:%M")}
+                if m.match_datetime.hour or m.match_datetime.minute
+                else {}
+            ),
             "season": season,
             "age_group": age_group,
             "match_type": "League",

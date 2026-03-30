@@ -486,8 +486,11 @@ def scrape(
             "match_date": m.match_datetime.date().isoformat(),
             # Omit match_time when unknown — prevents overwriting an existing
             # MT kick-off time with null (MLS Next drops time on completed matches)
-            **( {"match_time": m.match_datetime.strftime("%H:%M")}
-                if m.match_datetime.hour or m.match_datetime.minute else {} ),
+            **(
+                {"match_time": m.match_datetime.strftime("%H:%M")}
+                if m.match_datetime.hour or m.match_datetime.minute
+                else {}
+            ),
             "season": _current_season(),
             "age_group": config.age_group,
             "match_type": "League",
@@ -736,12 +739,11 @@ def audit_process(
         "audit_process.completed",
         events_processed=result.events_processed,
         matches_resubmitted=result.matches_resubmitted,
-        extra_in_mt_cancelled=result.extra_in_mt_cancelled,
         extra_in_mt_skipped=result.extra_in_mt_skipped,
         errors=result.errors,
     )
 
-    if result.matches_resubmitted or result.extra_in_mt_cancelled:
+    if result.matches_resubmitted:
         _send_telegram_processor_report(settings=settings, result=result, env=env)
 
     structlog.contextvars.unbind_contextvars("run_id", "env")
