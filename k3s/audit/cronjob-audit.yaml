@@ -18,6 +18,7 @@ spec:
           containers:
             - name: agent
               image: ghcr.io/silverbeer/match-scraper-agent:latest
+              imagePullPolicy: Always
               args: ["audit", "--env", "prod", "--count", "10"]
               envFrom:
                 - configMapRef:
