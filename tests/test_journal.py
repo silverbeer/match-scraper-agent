@@ -7,8 +7,6 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from utils.journal import (
     RunJournal,
     TargetEntry,
