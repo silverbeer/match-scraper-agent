@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
-from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from utils.journal import (
     RunJournal,
@@ -14,6 +17,9 @@ from utils.journal import (
     read_journal,
     write_journal,
 )
+
+BUCKET = "missingtable-match-scraper"
+KEY = "journal/latest.json"
 
 
 def _match(
@@ -52,6 +58,13 @@ def _fake_result(
     )
 
 
+def _s3_body(journal: RunJournal) -> MagicMock:
+    """Return a mock S3 response body for a serialised journal."""
+    body = MagicMock()
+    body.read.return_value = journal.model_dump_json(indent=2).encode()
+    return body
+
+
 class TestRunJournalModel:
     def test_round_trip(self) -> None:
         journal = RunJournal(
@@ -76,47 +89,83 @@ class TestRunJournalModel:
 
 
 class TestReadJournal:
-    def test_reads_valid_file(self, tmp_path: Path) -> None:
-        p = tmp_path / "journal.json"
+    def test_reads_from_s3(self) -> None:
         journal = RunJournal(timestamp="2026-03-09T14:00:00+00:00", run_id="abc")
-        p.write_text(journal.model_dump_json())
-        result = read_journal(p)
+        mock_s3 = MagicMock()
+        mock_s3.get_object.return_value = {"Body": _s3_body(journal)}
+
+        with patch("boto3.client", return_value=mock_s3):
+            result = read_journal(BUCKET, KEY)
+
         assert result is not None
         assert result.run_id == "abc"
+        mock_s3.get_object.assert_called_once_with(Bucket=BUCKET, Key=KEY)
 
-    def test_returns_none_for_missing_file(self, tmp_path: Path) -> None:
-        result = read_journal(tmp_path / "nope.json")
+    def test_returns_none_when_key_missing(self) -> None:
+        from botocore.exceptions import ClientError
+
+        mock_s3 = MagicMock()
+        mock_s3.get_object.side_effect = ClientError(
+            {"Error": {"Code": "NoSuchKey", "Message": "Not Found"}}, "GetObject"
+        )
+
+        with patch("boto3.client", return_value=mock_s3):
+            result = read_journal(BUCKET, KEY)
+
         assert result is None
 
-    def test_returns_none_for_invalid_json(self, tmp_path: Path) -> None:
-        p = tmp_path / "bad.json"
-        p.write_text("not json at all")
-        result = read_journal(p)
+    def test_returns_none_on_s3_error(self) -> None:
+        from botocore.exceptions import ClientError
+
+        mock_s3 = MagicMock()
+        mock_s3.get_object.side_effect = ClientError(
+            {"Error": {"Code": "AccessDenied", "Message": "Forbidden"}}, "GetObject"
+        )
+
+        with patch("boto3.client", return_value=mock_s3):
+            result = read_journal(BUCKET, KEY)
+
+        assert result is None
+
+    def test_returns_none_for_invalid_json(self) -> None:
+        body = MagicMock()
+        body.read.return_value = b"not json at all"
+        mock_s3 = MagicMock()
+        mock_s3.get_object.return_value = {"Body": body}
+
+        with patch("boto3.client", return_value=mock_s3):
+            result = read_journal(BUCKET, KEY)
+
         assert result is None
 
 
 class TestWriteJournal:
-    def test_writes_and_reads_back(self, tmp_path: Path) -> None:
-        p = tmp_path / "journal.json"
+    def test_writes_to_s3(self) -> None:
         journal = RunJournal(timestamp="2026-03-09T14:00:00+00:00", run_id="xyz")
-        write_journal(p, journal)
-        restored = read_journal(p)
-        assert restored is not None
-        assert restored.run_id == "xyz"
+        mock_s3 = MagicMock()
 
-    def test_creates_parent_dirs(self, tmp_path: Path) -> None:
-        p = tmp_path / "nested" / "deep" / "journal.json"
-        journal = RunJournal(timestamp="2026-03-09T14:00:00+00:00", run_id="nested")
-        write_journal(p, journal)
-        assert p.exists()
+        with patch("boto3.client", return_value=mock_s3):
+            write_journal(BUCKET, KEY, journal)
 
-    def test_overwrites_existing(self, tmp_path: Path) -> None:
-        p = tmp_path / "journal.json"
-        write_journal(p, RunJournal(timestamp="t1", run_id="first"))
-        write_journal(p, RunJournal(timestamp="t2", run_id="second"))
-        result = read_journal(p)
-        assert result is not None
-        assert result.run_id == "second"
+        mock_s3.put_object.assert_called_once()
+        call_kwargs = mock_s3.put_object.call_args.kwargs
+        assert call_kwargs["Bucket"] == BUCKET
+        assert call_kwargs["Key"] == KEY
+        assert call_kwargs["ContentType"] == "application/json"
+        payload = json.loads(call_kwargs["Body"])
+        assert payload["run_id"] == "xyz"
+
+    def test_does_not_raise_on_s3_error(self) -> None:
+        from botocore.exceptions import ClientError
+
+        journal = RunJournal(timestamp="2026-03-09T14:00:00+00:00", run_id="xyz")
+        mock_s3 = MagicMock()
+        mock_s3.put_object.side_effect = ClientError(
+            {"Error": {"Code": "AccessDenied", "Message": "Forbidden"}}, "PutObject"
+        )
+
+        with patch("boto3.client", return_value=mock_s3):
+            write_journal(BUCKET, KEY, journal)  # must not raise
 
 
 class TestBuildJournal:

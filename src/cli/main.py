@@ -289,12 +289,10 @@ def run(
 
             # Read previous journal for modifier rules
             journal = None
-            if settings.journal_path:
-                from pathlib import Path
-
+            if settings.journal_s3_bucket:
                 from utils.journal import read_journal
 
-                journal = read_journal(Path(settings.journal_path))
+                journal = read_journal(settings.journal_s3_bucket, settings.journal_s3_key)
                 if journal:
                     logger.info("journal.loaded", run_id=journal.run_id)
 
@@ -326,9 +324,7 @@ def run(
             typer.echo(f"  {prefix}{action.action}: {action.detail}")
 
     # Write run journal for next run's context
-    if settings.journal_path:
-        from pathlib import Path
-
+    if settings.journal_s3_bucket:
         from utils.journal import build_journal, write_journal
 
         journal_out = build_journal(
@@ -339,7 +335,7 @@ def run(
             target=target,
             dry_run=settings.dry_run,
         )
-        write_journal(Path(settings.journal_path), journal_out)
+        write_journal(settings.journal_s3_bucket, settings.journal_s3_key, journal_out)
 
     # Send Telegram summary report
     _send_telegram_report(

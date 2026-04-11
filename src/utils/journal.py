@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 import structlog
@@ -40,23 +39,41 @@ class RunJournal(BaseModel):
     missing_score_matches: list[str] = []
 
 
-def read_journal(path: Path) -> RunJournal | None:
-    """Read the last run journal from disk. Returns None if missing or invalid."""
+def read_journal(bucket: str, key: str) -> RunJournal | None:
+    """Read the last run journal from S3. Returns None if missing or invalid."""
+    import boto3
+    from botocore.exceptions import ClientError
+
     try:
-        return RunJournal.model_validate_json(path.read_text())
-    except (FileNotFoundError, json.JSONDecodeError, Exception) as exc:
-        logger.debug("journal.read_skipped", path=str(path), reason=str(exc))
+        s3 = boto3.client("s3")
+        response = s3.get_object(Bucket=bucket, Key=key)
+        return RunJournal.model_validate_json(response["Body"].read())
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] == "NoSuchKey":
+            logger.debug("journal.read_skipped", bucket=bucket, key=key, reason="not found")
+        else:
+            logger.debug("journal.read_skipped", bucket=bucket, key=key, reason=str(exc))
+        return None
+    except Exception as exc:
+        logger.debug("journal.read_skipped", bucket=bucket, key=key, reason=str(exc))
         return None
 
 
-def write_journal(path: Path, journal: RunJournal) -> None:
-    """Write the run journal to disk. Never raises."""
+def write_journal(bucket: str, key: str, journal: RunJournal) -> None:
+    """Write the run journal to S3. Never raises."""
+    import boto3
+
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(journal.model_dump_json(indent=2))
-        logger.info("journal.written", path=str(path))
+        s3 = boto3.client("s3")
+        s3.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=journal.model_dump_json(indent=2),
+            ContentType="application/json",
+        )
+        logger.info("journal.written", bucket=bucket, key=key)
     except Exception as exc:
-        logger.warning("journal.write_failed", path=str(path), error=str(exc))
+        logger.warning("journal.write_failed", bucket=bucket, key=key, error=str(exc))
 
 
 def build_journal(
