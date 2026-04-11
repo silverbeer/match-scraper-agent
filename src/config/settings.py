@@ -47,8 +47,9 @@ class AgentSettings(BaseSettings):
     json_logs: bool = False
     log_level: str = "info"
 
-    # Run journal (cross-run memory)
-    journal_path: str = ""
+    # Run journal (cross-run memory) — stored in S3
+    journal_s3_bucket: str = ""
+    journal_s3_key: str = "journal/latest.json"
 
     # Telegram notifications (run summary report)
     telegram_bot_token: str = ""
