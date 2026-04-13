@@ -203,8 +203,13 @@ class TestExecutePlan:
 class TestFilterLiveScoredProtection:
     def test_unscored_match_is_protected(self) -> None:
         matches = [
-            {"home_team": "IFA", "away_team": "Team B", "home_score": None, "away_score": None,
-             "match_status": "scheduled"},
+            {
+                "home_team": "IFA",
+                "away_team": "Team B",
+                "home_score": None,
+                "away_score": None,
+                "match_status": "scheduled",
+            },
         ]
         to_submit, protected = _filter_live_scored_protection(matches)
         assert to_submit == []
@@ -213,8 +218,13 @@ class TestFilterLiveScoredProtection:
 
     def test_scored_match_is_submitted(self) -> None:
         matches = [
-            {"home_team": "IFA", "away_team": "Team B", "home_score": 2, "away_score": 1,
-             "match_status": "completed"},
+            {
+                "home_team": "IFA",
+                "away_team": "Team B",
+                "home_score": 2,
+                "away_score": 1,
+                "match_status": "completed",
+            },
         ]
         to_submit, protected = _filter_live_scored_protection(matches)
         assert len(to_submit) == 1
@@ -222,12 +232,27 @@ class TestFilterLiveScoredProtection:
 
     def test_mixed_matches_split_correctly(self) -> None:
         matches = [
-            {"home_team": "A", "away_team": "B", "home_score": 2, "away_score": 0,
-             "match_status": "completed"},
-            {"home_team": "C", "away_team": "D", "home_score": None, "away_score": None,
-             "match_status": "scheduled"},
-            {"home_team": "E", "away_team": "F", "home_score": 1, "away_score": 1,
-             "match_status": "completed"},
+            {
+                "home_team": "A",
+                "away_team": "B",
+                "home_score": 2,
+                "away_score": 0,
+                "match_status": "completed",
+            },
+            {
+                "home_team": "C",
+                "away_team": "D",
+                "home_score": None,
+                "away_score": None,
+                "match_status": "scheduled",
+            },
+            {
+                "home_team": "E",
+                "away_team": "F",
+                "home_score": 1,
+                "away_score": 1,
+                "match_status": "completed",
+            },
         ]
         to_submit, protected = _filter_live_scored_protection(matches)
         assert len(to_submit) == 2
@@ -237,8 +262,13 @@ class TestFilterLiveScoredProtection:
     def test_zero_score_match_is_submitted(self) -> None:
         """A 0-0 draw has home_score=0, which is not None — should be submitted."""
         matches = [
-            {"home_team": "A", "away_team": "B", "home_score": 0, "away_score": 0,
-             "match_status": "completed"},
+            {
+                "home_team": "A",
+                "away_team": "B",
+                "home_score": 0,
+                "away_score": 0,
+                "match_status": "completed",
+            },
         ]
         to_submit, protected = _filter_live_scored_protection(matches)
         assert len(to_submit) == 1
@@ -262,10 +292,20 @@ class TestScoreSyncProtection:
 
         def scrape_side_effect(ctx_arg, **kwargs):
             ctx_arg._scraped_matches = [
-                {"home_team": "IFA", "away_team": "B", "home_score": None, "away_score": None,
-                 "match_status": "scheduled"},
-                {"home_team": "C", "away_team": "D", "home_score": 2, "away_score": 1,
-                 "match_status": "completed"},
+                {
+                    "home_team": "IFA",
+                    "away_team": "B",
+                    "home_score": None,
+                    "away_score": None,
+                    "match_status": "scheduled",
+                },
+                {
+                    "home_team": "C",
+                    "away_team": "D",
+                    "home_score": 2,
+                    "away_score": 1,
+                    "match_status": "completed",
+                },
             ]
             return mock_scrape(ctx_arg, **kwargs)
 
@@ -292,8 +332,13 @@ class TestScoreSyncProtection:
 
         def scrape_side_effect(ctx_arg, **kwargs):
             ctx_arg._scraped_matches = [
-                {"home_team": "IFA", "away_team": "B", "home_score": None, "away_score": None,
-                 "match_status": "scheduled"},
+                {
+                    "home_team": "IFA",
+                    "away_team": "B",
+                    "home_score": None,
+                    "away_score": None,
+                    "match_status": "scheduled",
+                },
             ]
             return mock_scrape(ctx_arg, **kwargs)
 
@@ -316,8 +361,13 @@ class TestScoreSyncProtection:
 
         def scrape_side_effect(ctx_arg, **kwargs):
             ctx_arg._scraped_matches = [
-                {"home_team": "A", "away_team": "B", "home_score": None, "away_score": None,
-                 "match_status": "scheduled"},
+                {
+                    "home_team": "A",
+                    "away_team": "B",
+                    "home_score": None,
+                    "away_score": None,
+                    "match_status": "scheduled",
+                },
             ]
             return mock_scrape(ctx_arg, **kwargs)
 
@@ -358,8 +408,13 @@ class TestScoreSyncProtection:
             nonlocal call_count
             call_count += 1
             ctx_arg._scraped_matches = [
-                {"home_team": f"Team{call_count}A", "away_team": f"Team{call_count}B",
-                 "home_score": None, "away_score": None, "match_status": "scheduled"},
+                {
+                    "home_team": f"Team{call_count}A",
+                    "away_team": f"Team{call_count}B",
+                    "home_score": None,
+                    "away_score": None,
+                    "match_status": "scheduled",
+                },
             ]
             return f"Found 1 match (call {call_count})"
 
