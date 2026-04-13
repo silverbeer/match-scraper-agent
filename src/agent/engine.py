@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import date
+from typing import Any
 
 import structlog
 
@@ -52,6 +53,34 @@ _MODIFIERS: list[Callable[[ScrapePlan, TargetEntry | None], ScrapePlan]] = [
     all_scored_skip,
     error_retry,
 ]
+
+
+# ---------------------------------------------------------------------------
+# Live-score protection
+# ---------------------------------------------------------------------------
+
+
+def _filter_live_scored_protection(
+    matches: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Separate scraped matches into submit vs. protected groups for SCORE_SYNC.
+
+    During SCORE_SYNC, only submit matches that mlssoccer.com has already scored
+    (home_score is not None). Unscored matches are withheld — they carry no new
+    information for a score sync and could overwrite live-scored MT records that
+    haven't been posted on mlssoccer.com yet.
+
+    Returns:
+        (to_submit, protected) — match dicts ready to submit, and those held back.
+    """
+    to_submit = []
+    protected = []
+    for m in matches:
+        if m.get("home_score") is not None:
+            to_submit.append(m)
+        else:
+            protected.append(m)
+    return to_submit, protected
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +162,26 @@ async def execute_plan(plan: RunPlan, ctx: RunContext) -> AgentResult:
                 dry_run=ctx.dry_run,
             )
         )
+
+        # For SCORE_SYNC: withhold unscored matches to protect live-scored MT records.
+        # mlssoccer.com may not yet reflect a score that was entered live in MT —
+        # submitting "scheduled" would overwrite the completed/scored MT record.
+        if rule.action == ScrapeAction.SCORE_SYNC and ctx._scraped_matches:
+            ctx._scraped_matches, newly_protected = _filter_live_scored_protection(
+                ctx._scraped_matches
+            )
+            ctx._protected_matches.extend(newly_protected)
+            found = len(ctx._scraped_matches)
+            if newly_protected:
+                logger.info(
+                    "engine.score_sync.protected",
+                    target=rule.target_label,
+                    protected_count=len(newly_protected),
+                    reason=(
+                        "mlssoccer.com not yet scored — withheld to protect"
+                        " potential live-scored MT data"
+                    ),
+                )
 
         if found > 0:
             submit_result = await submit_matches(ctx)

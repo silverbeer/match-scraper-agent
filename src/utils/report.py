@@ -24,6 +24,7 @@ def build_report(
     matches_submitted: int,
     scraped_matches: list[dict[str, Any]],
     submission_errors: list[dict[str, str]],
+    protected_matches: list[dict[str, Any]] | None = None,
     env: str,
     target: str | None,
     dry_run: bool,
@@ -144,6 +145,25 @@ def build_report(
             match = escape(err.get("match", "unknown"))
             error = escape(err.get("error", "unknown"))
             lines.append(f"  • {match} — {error}")
+        lines.append("")
+
+    # --- Live Score Protected ---
+    protected = protected_matches or []
+    if protected:
+        n = len(protected)
+        lines.append(f"*Live Score Protected \\({escape(str(n))}\\):*")
+        lines.append(
+            escape("  ⚠️ mlssoccer.com not yet updated — withheld to protect MT live scores")
+        )
+        lines.append(
+            escape("  Run 'audit' after mlssoccer.com posts scores to detect any discrepancies")
+        )
+        for m in sorted(protected, key=lambda x: x.get("match_date", "")):
+            md = escape(m.get("match_date", "?"))
+            home = escape(m.get("home_team", "?"))
+            away = escape(m.get("away_team", "?"))
+            status = escape(m.get("match_status", "?"))
+            lines.append(f"  • {md} {home} vs {away} \\[{status}\\]")
         lines.append("")
 
     # --- Weekend Scores ---
