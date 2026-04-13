@@ -146,6 +146,7 @@ def _send_telegram_report(
         matches_submitted=result.matches_submitted,
         scraped_matches=ctx._scraped_matches,
         submission_errors=ctx._submission_errors,
+        protected_matches=ctx._protected_matches,
         env=env,
         target=target,
         dry_run=ctx.dry_run,
