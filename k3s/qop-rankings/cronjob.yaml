@@ -4,7 +4,8 @@ metadata:
   name: qop-rankings-scraper
   namespace: match-scraper
 spec:
-  schedule: "0 6 * * 1"  # Every Monday at 06:00 UTC
+  schedule: "0 12 * * 5"  # Every Friday at 12:00 (noon) America/New_York
+  timeZone: "America/New_York"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 5
@@ -19,13 +20,13 @@ spec:
             - name: rankings-scraper
               image: ghcr.io/silverbeer/match-scraper-agent:latest
               imagePullPolicy: Always
-              command: ["mls-scraper"]
+              command: ["uv", "run", "mls-scraper"]
               args:
                 - rankings
                 - --age-group
-                - u14
+                - U14
                 - --division
-                - northeast
+                - Northeast
                 - --headless
               envFrom:
                 - configMapRef:
