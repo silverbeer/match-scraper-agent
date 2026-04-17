@@ -8,7 +8,7 @@ build/
 .env
 # Prod env contains Supabase credentials
 envs/.env.prod
-*.lock
+# uv.lock is committed — it pins the exact mls-match-scraper commit used in the Docker image
 .ruff_cache/
 .pytest_cache/
 .coverage
