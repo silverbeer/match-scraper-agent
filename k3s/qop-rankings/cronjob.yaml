@@ -33,10 +33,19 @@ spec:
                     name: match-scraper-agent-config
                 - secretRef:
                     name: match-scraper-agent-secret
-              # Note: the configmap exposes AGENT_MISSING_TABLE_API_URL; the
-              # mls-scraper rankings command reads MISSING_TABLE_API_BASE_URL.
-              # If the command cannot find the API URL, add MISSING_TABLE_API_BASE_URL
-              # to the configmap pointing at https://api.missingtable.com.
+              env:
+                # The mls-scraper rankings command reads these unprefixed names;
+                # we map them from the agent's AGENT_-prefixed equivalents.
+                - name: MISSING_TABLE_API_BASE_URL
+                  valueFrom:
+                    configMapKeyRef:
+                      name: match-scraper-agent-config
+                      key: AGENT_MISSING_TABLE_API_URL
+                - name: MISSING_TABLE_API_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: match-scraper-agent-secret
+                      key: AGENT_MISSING_TABLE_API_KEY
               resources:
                 requests:
                   cpu: 100m
