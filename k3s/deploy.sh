@@ -2,7 +2,8 @@
 # Deploy match-scraper-agent stack to K3s.
 #
 # Applies: namespace → RabbitMQ (pvc, deployment, service) →
-#          match-scraper-agent (configmap, secret, cronjob)
+#          match-scraper-agent (configmap, secret, cronjob) →
+#          qop-rankings (cronjob)
 #
 # Reads envs/.env.prod for secrets and generates the K8s Secret manifest.
 #
@@ -83,6 +84,10 @@ kubectl apply -f "$SCRIPT_DIR/match-scraper-agent/pvc.yaml"
 kubectl apply -f "$SCRIPT_DIR/match-scraper-agent/configmap.yaml"
 kubectl apply -f "$SECRET_FILE"
 kubectl apply -f "$SCRIPT_DIR/match-scraper-agent/cronjob.yaml"
+
+echo ""
+echo "Applying QoP rankings scraper..."
+kubectl apply -f "$SCRIPT_DIR/qop-rankings/cronjob.yaml"
 
 echo ""
 echo "Done. Verify with:"
