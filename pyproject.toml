@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Pipeline-based match data manager — deterministic rules engine for youth soccer scraping"
 requires-python = ">=3.12"
 dependencies = [
-    "mls-match-scraper @ git+https://github.com/silverbeer/match-scraper.git@6582f1c",
+    "mls-match-scraper @ git+https://github.com/silverbeer/match-scraper.git@162f911",
     "typer>=0.15",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
