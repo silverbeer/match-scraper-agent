@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from agent.deps import RunContext
@@ -172,3 +172,63 @@ class TestSubmitMatches:
         result = asyncio.run(submit_matches(ctx))
         assert "Submitted 2 matches" in result
         assert "1 errors" in result
+
+
+class TestClampScrapeRange:
+    """
+    Guards on the window handed to the scraper (SB-546).
+
+    MLS Next serves only the current season; an earlier start makes the
+    calendar widget fail rather than return less, and an inverted range makes
+    ScrapingConfig reject look_back_days outright.
+    """
+
+    def test_start_is_raised_to_the_season_start(self):
+        from agent.tools import SEASON_START, clamp_scrape_range
+
+        start, _ = clamp_scrape_range(
+            SEASON_START - timedelta(days=40), SEASON_START + timedelta(days=30)
+        )
+
+        assert start == SEASON_START
+
+    def test_start_inside_the_season_is_untouched(self):
+        from agent.tools import SEASON_START, clamp_scrape_range
+
+        wanted = SEASON_START + timedelta(days=60)
+        start, end = clamp_scrape_range(wanted, wanted + timedelta(days=7))
+
+        assert start == wanted
+        assert end == wanted + timedelta(days=7)
+
+    def test_inverted_range_is_never_returned(self):
+        """
+        The production failure: end 33 days before start produced
+        look_back_days=-33 and killed every run.
+        """
+        from agent.tools import SEASON_START, clamp_scrape_range
+
+        start, end = clamp_scrape_range(
+            SEASON_START + timedelta(days=1), SEASON_START - timedelta(days=32)
+        )
+
+        assert end >= start
+        assert (end - start).days >= 0
+
+    def test_look_back_days_is_never_negative(self):
+        """Whatever we feed it, the derived look_back must satisfy ScrapingConfig."""
+        from agent.tools import SEASON_START, clamp_scrape_range
+
+        for start_offset in (-400, -60, -1, 0, 1, 200):
+            for end_offset in (-400, -33, 0, 5, 300):
+                start, end = clamp_scrape_range(
+                    SEASON_START + timedelta(days=start_offset),
+                    SEASON_START + timedelta(days=end_offset),
+                )
+                assert start >= SEASON_START
+                assert (end - start).days >= 0
+
+    def test_season_end_is_after_season_start(self):
+        from agent.tools import SEASON_END, SEASON_START
+
+        assert SEASON_START < SEASON_END

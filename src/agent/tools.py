@@ -42,6 +42,34 @@ def _normalize_team_name(name: str, *, league: str = "") -> str:
 # current season means the rollover is a no-op instead of an outage.
 SEASON_END = season_window(current_season_year())[1]
 
+# Season start date — the earliest date MLS Next will serve. The schedule
+# calendar refuses to navigate to months before the current season and fails
+# with "Failed to navigate to start date month", so asking for anything
+# earlier is not a smaller result, it is a broken scrape.
+SEASON_START = season_window(current_season_year())[0]
+
+
+def clamp_scrape_range(start: date, end: date) -> tuple[date, date]:
+    """
+    Confine a scrape window to dates MLS Next will actually serve.
+
+    Two guards, both learned the hard way:
+
+    * ``start`` is raised to the season start. The weekend-scores window looks
+      back to the Friday before last weekend, which in early August points at
+      the previous season — a range the site rejects outright.
+    * ``end`` is never allowed before ``start``. The season window closes on
+      15 July while the season year rolls over on 1 August, leaving the second
+      half of July a dead zone where an unguarded ``end`` sits in the past.
+      That inversion produced ``look_back_days=-33`` and failed every
+      production run.
+
+    Returns the corrected ``(start, end)``.
+    """
+    clamped_start = max(start, SEASON_START)
+    clamped_end = max(end, clamped_start)
+    return clamped_start, clamped_end
+
 
 async def scrape_matches(
     ctx: RunContext,
@@ -61,8 +89,20 @@ async def scrape_matches(
     from src.scraper.config import ScrapingConfig
     from src.scraper.mls_scraper import MLSScraper
 
-    parsed_start = date.fromisoformat(start_date)
-    parsed_end = date.fromisoformat(end_date)
+    requested_start = date.fromisoformat(start_date)
+    requested_end = date.fromisoformat(end_date)
+
+    # Last line of defence: every scrape goes through here, whoever planned it.
+    parsed_start, parsed_end = clamp_scrape_range(requested_start, requested_end)
+    if (parsed_start, parsed_end) != (requested_start, requested_end):
+        logger.info(
+            "tool.scrape_matches.range_clamped",
+            requested_start=requested_start.isoformat(),
+            requested_end=requested_end.isoformat(),
+            start=parsed_start.isoformat(),
+            end=parsed_end.isoformat(),
+            season_start=SEASON_START.isoformat(),
+        )
 
     look_back = (parsed_end - parsed_start).days
 
@@ -81,8 +121,8 @@ async def scrape_matches(
 
     logger.info(
         "tool.scrape_matches",
-        start=start_date,
-        end=end_date,
+        start=parsed_start.isoformat(),
+        end=parsed_end.isoformat(),
         age_group=config.age_group,
         league=config.league,
         division=config.division,
@@ -145,10 +185,10 @@ async def scrape_matches(
             target += f" {config.conference}"
         elif config.division:
             target += f" {config.division}"
-        return f"No matches found for {target} ({start_date} to {end_date})."
+        return f"No matches found for {target} ({parsed_start} to {parsed_end})."
 
     # Build a human-readable summary
-    lines = [f"Found {len(matches)} matches ({start_date} to {end_date}):"]
+    lines = [f"Found {len(matches)} matches ({parsed_start} to {parsed_end}):"]
     for m in matches:
         score = f" ({m.home_score}-{m.away_score})" if m.has_score() else ""
         status = m.match_status
