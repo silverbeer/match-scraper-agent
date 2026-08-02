@@ -3,7 +3,7 @@
 #
 # Applies: namespace → RabbitMQ (pvc, deployment, service) →
 #          match-scraper-agent (configmap, secret, cronjob) →
-#          qop-rankings (cronjob)
+#          qop-rankings (cronjob) → release-watch (cronjob)
 #
 # Reads envs/.env.prod for secrets and generates the K8s Secret manifest.
 #
@@ -88,6 +88,10 @@ kubectl apply -f "$SCRIPT_DIR/match-scraper-agent/cronjob.yaml"
 echo ""
 echo "Applying QoP rankings scraper..."
 kubectl apply -f "$SCRIPT_DIR/qop-rankings/cronjob.yaml"
+
+echo ""
+echo "Applying schedule release watcher..."
+kubectl apply -f "$SCRIPT_DIR/release-watch/cronjob.yaml"
 
 echo ""
 echo "Done. Verify with:"

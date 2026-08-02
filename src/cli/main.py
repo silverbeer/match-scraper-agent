@@ -834,3 +834,159 @@ def audit_report(
         f"\nTotal: {total}  |  Audited this week: {audited_week}"
         f"  |  Overdue: {overdue_count}  |  Pending: {never_count}\n"
     )
+
+
+def _send_telegram_message(settings: AgentSettings, message: str, *, subject: str) -> None:
+    """
+    Send one MarkdownV2 message, falling back to email if Telegram fails.
+
+    Mirrors _send_telegram_report but takes a prebuilt message, since the
+    release watcher has nothing to do with run summaries.
+    """
+    if not settings.telegram_bot_token or not settings.telegram_chat_id:
+        logger.debug("telegram.skipped", reason="not configured")
+        return
+
+    from telegram_notify import TelegramClient
+
+    try:
+        client = TelegramClient(
+            bot_token=settings.telegram_bot_token,
+            chat_id=settings.telegram_chat_id,
+        )
+        client.send(message)
+        logger.info("telegram.sent", chat_id=settings.telegram_chat_id)
+    except Exception as exc:
+        logger.warning("telegram.failed", error=str(exc))
+        _send_email_alert(
+            settings,
+            subject=subject,
+            body=f"Telegram notification failed: {exc}\n\n{message}",
+        )
+
+
+@app.command(name="watch-release")
+def watch_release(
+    env: Annotated[str, typer.Option("--env", help="Environment name (local, prod)")] = "local",
+    age_groups: Annotated[
+        list[str] | None,
+        typer.Option("--age-group", "-a", help="Age group to check; repeat for several."),
+    ] = None,
+    divisions: Annotated[
+        list[str] | None,
+        typer.Option("--division", "-d", help="Division to check; repeat for several."),
+    ] = None,
+    full_season: Annotated[
+        bool, typer.Option("--full-season", help="Search the whole season, not just the fall.")
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Probe and report, but send and save nothing."),
+    ] = False,
+) -> None:
+    """
+    Watch for the MLS Next schedule being published, and announce it once.
+
+    Designed to run unattended on a CronJob. Sends Telegram on the first
+    detection of each target and on a sustained probe outage; stays silent
+    otherwise, because "still not published" is the expected state for weeks.
+
+    Notify-only by design — it never scrapes. A new season's page format is
+    unverified until a human looks at it, and publishing bad data to
+    missing-table unattended is worse than waiting.
+    """
+    from src.scraper.release_detector import ReleaseDetectorError, ScheduleReleaseDetector
+
+    from config.settings import AgentSettings, env_file_path
+    from utils.logger import configure_logging
+    from utils.release_watch import read_state, write_state
+    from utils.report import build_release_failure_report, build_release_report
+
+    settings = AgentSettings(_env_file=env_file_path(env))
+    configure_logging(json_output=settings.json_logs)
+
+    try:
+        detector = ScheduleReleaseDetector(
+            age_groups=age_groups or None,
+            divisions=divisions or None,
+            fall_only=not full_season,
+        )
+    except ReleaseDetectorError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    import asyncio
+
+    probe = asyncio.run(detector.probe())
+
+    bucket = settings.journal_s3_bucket
+    if bucket and not dry_run:
+        state = read_state(bucket, settings.release_watch_s3_key)
+    else:
+        if not bucket:
+            logger.warning(
+                "release_watch.no_bucket",
+                detail="AGENT_JOURNAL_S3_BUCKET unset — every run will re-announce",
+            )
+        from utils.release_watch import ReleaseWatchState
+
+        state = ReleaseWatchState()
+
+    state.reset_for_season(probe.season)
+
+    live_labels = [r.label for r in probe.live]
+    newly_live = state.newly_live(live_labels)
+
+    typer.echo(probe.summary())
+
+    if probe.all_failed:
+        state.consecutive_failures += 1
+        threshold = settings.release_watch_failure_threshold
+        logger.warning(
+            "release_watch.all_failed",
+            consecutive=state.consecutive_failures,
+            threshold=threshold,
+        )
+        if state.consecutive_failures >= threshold and not state.failure_alert_sent:
+            sample = probe.errors[0].error if probe.errors else "unknown"
+            if not dry_run:
+                _send_telegram_message(
+                    settings,
+                    build_release_failure_report(
+                        season=probe.season,
+                        consecutive_failures=state.consecutive_failures,
+                        total_targets=len(probe.results),
+                        sample_error=sample or "unknown",
+                    ),
+                    subject="[match-scraper-agent] Schedule watch failing",
+                )
+            state.failure_alert_sent = True
+    else:
+        state.consecutive_failures = 0
+        state.failure_alert_sent = False
+
+    if newly_live:
+        logger.info("release_watch.released", targets=newly_live)
+        if not dry_run:
+            _send_telegram_message(
+                settings,
+                build_release_report(
+                    season=probe.season,
+                    newly_live=newly_live,
+                    window_start=probe.window_start.isoformat(),
+                    window_end=probe.window_end.isoformat(),
+                    total_targets=len(probe.results),
+                ),
+                subject="[match-scraper-agent] MLS Next schedule published",
+            )
+        state.record_live(newly_live)
+
+    state.touch()
+
+    if bucket and not dry_run:
+        write_state(bucket, settings.release_watch_s3_key, state)
+
+    if probe.all_failed:
+        raise typer.Exit(code=20)
+    if newly_live:
+        raise typer.Exit(code=10)
