@@ -1,0 +1,60 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: schedule-release-watch
+  namespace: match-scraper
+spec:
+  # Every 30 minutes. A probe is ~18 HTTP requests and finishes in a couple of
+  # seconds, so this is cheap; the point is to catch a release that lands on a
+  # weekend when nobody is watching.
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  # Keep more failures than successes — a failed watcher is the interesting case.
+  failedJobsHistoryLimit: 5
+  # Runs every 30 min; do not let missed slots pile up after an outage.
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 300
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: release-watch
+              image: ghcr.io/silverbeer/match-scraper-agent:latest
+              imagePullPolicy: Always
+              # Override the image ENTRYPOINT so we can translate exit codes.
+              # watch-release uses 10 (newly published) and 20 (sustained
+              # outage) to signal *outcomes*, but Kubernetes reads any non-zero
+              # exit as a failed Job — which would retry the run and clutter the
+              # history on the very occasions the watcher worked correctly.
+              # Telegram has already been sent by the time we get here, so these
+              # are reported, not failed. Anything else is a genuine crash and
+              # is left to fail.
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  uv run match-scraper-agent watch-release --env prod
+                  code=$?
+                  case "$code" in
+                    0)  echo "watch: nothing new" ;;
+                    10) echo "watch: schedule published — notified" ;;
+                    20) echo "watch: probe failing — notified if sustained" ;;
+                    *)  echo "watch: unexpected exit $code"; exit "$code" ;;
+                  esac
+              envFrom:
+                - configMapRef:
+                    name: match-scraper-agent-config
+                - secretRef:
+                    name: match-scraper-agent-secret
+              resources:
+                # No browser — plain HTTP, so this is far lighter than the
+                # scraper CronJobs.
+                requests:
+                  cpu: 50m
+                  memory: 256Mi
+                limits:
+                  cpu: "250m"
+                  memory: 512Mi

@@ -13,6 +13,9 @@ data:
   MISSING_TABLE_API_BASE_URL: "https://api.missingtable.com"
   AGENT_JOURNAL_S3_BUCKET: "missingtable-match-scraper"
   AGENT_JOURNAL_S3_KEY: "journal/latest.json"
+  # Schedule release watcher — shares the journal bucket. Without remote
+  # state the watcher would re-announce a release on every CronJob run.
+  AGENT_RELEASE_WATCH_S3_KEY: "release-watch/state.json"
   AGENT_DRY_RUN: "false"
   AGENT_JSON_LOGS: "true"
   AGENT_AUDIT_SEASON_START: "2026-02-01"

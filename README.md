@@ -102,6 +102,10 @@ All settings use the `AGENT_` prefix.
 | `AGENT_DRY_RUN` | `false` | Skip mutating operations |
 | `AGENT_JSON_LOGS` | `false` | Output structured JSON log lines |
 | `AGENT_LOG_LEVEL` | `info` | Minimum log level |
+| `AGENT_JOURNAL_S3_BUCKET` | *(empty)* | S3 bucket for cross-run state (run journal and release watcher) |
+| `AGENT_JOURNAL_S3_KEY` | `journal/latest.json` | Object key for the run journal |
+| `AGENT_RELEASE_WATCH_S3_KEY` | `release-watch/state.json` | Object key for release-watcher state |
+| `AGENT_RELEASE_WATCH_FAILURE_THRESHOLD` | `3` | Consecutive all-failed probes before alerting |
 
 ## CLI Reference
 
@@ -127,6 +131,45 @@ Options:
   --env TEXT       Environment name: local, prod (default: local)
   --proxy-url TEXT Override AGENT_PROXY_BASE_URL
 ```
+
+### `match-scraper-agent watch-release`
+
+Watch for MLS Next publishing its schedule, and announce it exactly once.
+
+Runs unattended on the `schedule-release-watch` CronJob (every 30 min). It
+never scrapes — a new season's page format is unverified until a human looks
+at it, and publishing bad data to missing-table unattended is worse than
+waiting. Notify-only by design.
+
+```
+Options:
+  --env TEXT        Environment name: local, prod (default: local)
+  --age-group, -a   Age group to check; repeat for several (default: all six, U15 first)
+  --division,  -d   Division to check; repeat for several (default: Northeast, Florida, Mid-Atlantic)
+  --full-season     Search the whole season, not just the fall segment
+  --dry-run         Probe and report, but send and save nothing
+```
+
+Exit codes double as the CronJob's outcome signal:
+
+| Code | Meaning | Telegram |
+|------|---------|----------|
+| `0`  | Nothing new — not published, or already announced | silent |
+| `10` | Newly published fixtures | 🎉 announcement |
+| `20` | Every target failed to probe | ⚠️ only once the streak hits `AGENT_RELEASE_WATCH_FAILURE_THRESHOLD` (default 3) |
+
+The CronJob maps `10` and `20` back to a zero exit, because Kubernetes reads
+any non-zero as a failed Job — which would retry and clutter the history on
+exactly the runs that worked. Anything else is treated as a real crash.
+
+**State lives in S3**, not on disk (`AGENT_RELEASE_WATCH_S3_KEY`, sharing
+`AGENT_JOURNAL_S3_BUCKET`). CronJob pods are ephemeral, so local state would
+make the watcher re-announce the same release every 30 minutes. If the bucket
+is unset the command still runs, logs a warning, and announces every time.
+
+Season changes clear the remembered targets — otherwise last season's
+announcements would suppress this season's and the watcher would go
+permanently quiet.
 
 ## Agent Tools
 
@@ -159,6 +202,16 @@ Manifests are in `k3s/match-scraper-agent/`:
 kubectl apply -f k3s/match-scraper-agent/configmap.yaml
 kubectl apply -f k3s/match-scraper-agent/secret.yaml
 kubectl apply -f k3s/match-scraper-agent/cronjob.yaml
+kubectl apply -f k3s/release-watch/cronjob.yaml
 ```
 
+Or apply the whole stack with `k3s/deploy.sh`.
+
 The CronJob runs 4x/day at 02:00, 08:00, 14:00, 20:00 UTC with `concurrencyPolicy: Forbid`.
+
+| CronJob | Schedule | Purpose |
+|---------|----------|---------|
+| `match-scraper-agent` | `0 2,8,14,20 * * *` | Scrape and submit matches |
+| `match-scraper-agent-weekend` | `0 5,11,17,23 * * 0,6` | 4 extra Sat/Sun slots |
+| `qop-rankings-scraper` | `0 12 * * 5` | Weekly QoP standings |
+| `schedule-release-watch` | `*/30 * * * *` | Watch for schedule publication (HTTP only, no browser) |

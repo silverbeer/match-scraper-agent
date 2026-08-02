@@ -6,6 +6,7 @@ import asyncio
 from datetime import date
 
 import structlog
+from src.scraper.modular11 import current_season_year, season_label, season_window
 
 from agent.deps import RunContext
 
@@ -34,7 +35,12 @@ def _normalize_team_name(name: str, *, league: str = "") -> str:
 
 # Season end date — enforced as a floor for end_date so we can't
 # accidentally use a shorter range than the full remaining season.
-SEASON_END = date(2026, 6, 30)
+#
+# Derived, not pinned. The previous hardcoded date(2026, 6, 30) silently
+# became a date in the *past* when the 2026-2027 season opened, which made
+# this floor produce an end_date before the start_date. Deriving it from the
+# current season means the rollover is a no-op instead of an outage.
+SEASON_END = season_window(current_season_year())[1]
 
 
 async def scrape_matches(
@@ -192,9 +198,11 @@ async def submit_matches(ctx: RunContext) -> str:
 
 
 def _current_season() -> str:
-    """Return the current season string (e.g. '2025-2026')."""
-    today = date.today()
-    # Season starts in August: Aug 2025 → "2025-2026", Jan 2026 → "2025-2026"
-    if today.month >= 8:
-        return f"{today.year}-{today.year + 1}"
-    return f"{today.year - 1}-{today.year}"
+    """
+    Return the current season string (e.g. '2026-2027').
+
+    Delegates to match-scraper rather than reimplementing the August cutoff.
+    Two copies of this rule is how the agent and the scraper ended up posting
+    different season formats ('2025-2026' vs '2024-25') for the same match.
+    """
+    return season_label(current_season_year())

@@ -51,6 +51,14 @@ class AgentSettings(BaseSettings):
     journal_s3_bucket: str = ""
     journal_s3_key: str = "journal/latest.json"
 
+    # Schedule release watcher — shares the journal bucket. State must be
+    # remote because CronJob pods are ephemeral and local state would make
+    # the watcher re-announce a release on every single run.
+    release_watch_s3_key: str = "release-watch/state.json"
+    # Consecutive all-targets-failed runs before alerting. One failed run
+    # against someone else's server is noise, not news.
+    release_watch_failure_threshold: int = 3
+
     # Telegram notifications (run summary report)
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""

@@ -363,3 +363,67 @@ def _format_delta(delta: timedelta) -> str:
 def _action_icon(action: str) -> str:
     """Map action type to an emoji icon."""
     return {"scrape": "✅", "submit": "✅", "skip": "⏭️"}.get(action, "•")
+
+
+def build_release_report(
+    *,
+    season: str,
+    newly_live: list[str],
+    window_start: str,
+    window_end: str,
+    total_targets: int,
+) -> str:
+    """
+    Build the MarkdownV2 message announcing a schedule release.
+
+    Deliberately short and actionable: this fires once, possibly at 3am, and
+    the only thing the reader needs is what dropped and what to do about it.
+    """
+    lines = [
+        "🎉 *MLS Next schedule published*",
+        "",
+        f"Season: {escape(season)}",
+        f"Window: {escape(window_start)} → {escape(window_end)}",
+        "",
+        f"*Live now* \\({len(newly_live)} of {total_targets} targets\\):",
+    ]
+    lines.extend(f"  • {escape(label)}" for label in newly_live)
+    lines += [
+        "",
+        escape(
+            "Next: verify a scrape before trusting it, then discover/enrich "
+            "any division whose clubs are not yet in missing-table."
+        ),
+    ]
+    return "\n".join(lines)
+
+
+def build_release_failure_report(
+    *,
+    season: str,
+    consecutive_failures: int,
+    total_targets: int,
+    sample_error: str,
+) -> str:
+    """
+    Build the MarkdownV2 message for a sustained probe outage.
+
+    Only sent once per streak. A single failed run is not news — the endpoint
+    is someone else's server and blips are expected.
+    """
+    return "\n".join(
+        [
+            "⚠️ *Schedule watch failing*",
+            "",
+            f"Season: {escape(season)}",
+            escape(
+                f"All {total_targets} targets have failed {consecutive_failures} runs in a row."
+            ),
+            "",
+            f"Latest error: {escape(sample_error)}",
+            "",
+            escape(
+                "The watcher cannot tell whether the schedule has dropped while this persists."
+            ),
+        ]
+    )
