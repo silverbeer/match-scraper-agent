@@ -158,11 +158,24 @@ def fetch_mt_status(
     return targets, "ok"
 
 
+def _clamp(start: date, end: date, season_start: date) -> tuple[date, date]:
+    """
+    Confine a planned window to dates MLS Next will serve.
+
+    Mirrors ``tools.clamp_scrape_range``, applied here as well so that plans,
+    logs and Telegram reports quote the dates actually scraped rather than the
+    ones we would have liked.
+    """
+    clamped_start = max(start, season_start)
+    return clamped_start, max(end, clamped_start)
+
+
 def compute_scrape_plan(
     mt_targets: list[dict[str, Any]],
     target_configs: dict[str, dict[str, str]],
     today: date,
     season_end: date,
+    season_start: date,
 ) -> RunPlan:
     """Compute a deterministic scrape plan for all non-IFA targets.
 
@@ -171,6 +184,12 @@ def compute_scrape_plan(
         target_configs: The _TARGET_SCRAPER_CONFIG dict from main.py.
         today: Today's date.
         season_end: Season end date (SEASON_END constant).
+        season_start: Earliest date MLS Next serves (SEASON_START constant).
+            Windows are clamped to it — the score-sync window looks back to the
+            Friday before last weekend, which in early August lands in the
+            previous season and the site rejects outright. Required rather than
+            defaulted, so this planner stays a pure function of its arguments
+            instead of quietly depending on the wall clock.
     """
     # Build lookup: (age_group, league, division) → MT target data
     mt_lookup: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -188,13 +207,14 @@ def compute_scrape_plan(
         mt_data = mt_lookup.get(lookup_key)
 
         if mt_data is None or mt_data.get("total", 0) == 0:
+            full_start, full_end = _clamp(today, season_end, season_start)
             plans.append(
                 ScrapePlan(
                     target_key=target_key,
                     target_label=label,
                     action=ScrapeAction.FULL_SYNC,
-                    start_date=today,
-                    end_date=season_end,
+                    start_date=full_start,
+                    end_date=full_end,
                     reason="No matches in MT — needs initial sync",
                     scraper_params=cfg,
                 )
@@ -205,7 +225,7 @@ def compute_scrape_plan(
         needs_kickoff = mt_data.get("needs_kickoff", 0)
 
         if needs_score > 0:
-            fri, mon = _match_weekend_window(today)
+            fri, mon = _clamp(*_match_weekend_window(today), season_start)
 
             reason_parts = [f"{needs_score} match(es) awaiting scores"]
             if needs_kickoff > 0:
@@ -225,13 +245,16 @@ def compute_scrape_plan(
             continue
 
         if needs_kickoff > 0:
+            ko_start, ko_end = _clamp(
+                today, today + timedelta(days=_KICKOFF_LOOKAHEAD_DAYS), season_start
+            )
             plans.append(
                 ScrapePlan(
                     target_key=target_key,
                     target_label=label,
                     action=ScrapeAction.KICKOFF_SYNC,
-                    start_date=today,
-                    end_date=today + timedelta(days=_KICKOFF_LOOKAHEAD_DAYS),
+                    start_date=ko_start,
+                    end_date=ko_end,
                     reason=f"{needs_kickoff} match(es) missing kick-off time",
                     scraper_params=cfg,
                 )

@@ -12,6 +12,9 @@ from agent.planner import (
 )
 
 SEASON_END = date(2026, 6, 30)
+# Matching season start for the 2025-2026 fixtures these tests use, so the
+# SB-546 clamp is a no-op here rather than rewriting every expected date.
+SEASON_START = date(2025, 8, 1)
 
 # Minimal target configs (mirrors _TARGET_SCRAPER_CONFIG without IFA entries)
 SAMPLE_CONFIGS = {
@@ -90,6 +93,7 @@ class TestComputeScrapePlan:
             SAMPLE_CONFIGS,
             date(2026, 3, 12),
             SEASON_END,
+            SEASON_START,
         )
 
         assert len(plan.plans) == 3  # excludes u14-hg-ifa
@@ -115,6 +119,7 @@ class TestComputeScrapePlan:
             SAMPLE_CONFIGS,
             date(2026, 3, 12),
             SEASON_END,
+            SEASON_START,
         )
 
         u14 = next(p for p in plan.plans if p.target_key == "u14-hg")
@@ -133,6 +138,7 @@ class TestComputeScrapePlan:
             SAMPLE_CONFIGS,
             date(2026, 3, 12),
             SEASON_END,
+            SEASON_START,
         )
 
         u13 = next(p for p in plan.plans if p.target_key == "u13-hg")
@@ -151,19 +157,20 @@ class TestComputeScrapePlan:
             SAMPLE_CONFIGS,
             date(2026, 3, 12),
             SEASON_END,
+            SEASON_START,
         )
 
         u14 = next(p for p in plan.plans if p.target_key == "u14-hg")
         assert u14.action == ScrapeAction.FULL_SYNC
 
     def test_empty_mt_response_full_sync_all(self):
-        plan = compute_scrape_plan([], SAMPLE_CONFIGS, date(2026, 3, 12), SEASON_END)
+        plan = compute_scrape_plan([], SAMPLE_CONFIGS, date(2026, 3, 12), SEASON_END, SEASON_START)
 
         for p in plan.plans:
             assert p.action == ScrapeAction.FULL_SYNC
 
     def test_ifa_targets_excluded(self):
-        plan = compute_scrape_plan([], SAMPLE_CONFIGS, date(2026, 3, 12), SEASON_END)
+        plan = compute_scrape_plan([], SAMPLE_CONFIGS, date(2026, 3, 12), SEASON_END, SEASON_START)
         keys = [p.target_key for p in plan.plans]
         assert "u14-hg-ifa" not in keys
 
@@ -177,6 +184,7 @@ class TestComputeScrapePlan:
             SAMPLE_CONFIGS,
             date(2026, 3, 12),
             SEASON_END,
+            SEASON_START,
         )
 
         academy = next(p for p in plan.plans if p.target_key == "u14-academy")
@@ -199,6 +207,7 @@ class TestComputeScrapePlan:
             SAMPLE_CONFIGS,
             date(2026, 3, 12),
             SEASON_END,
+            SEASON_START,
         )
 
         u14 = next(p for p in plan.plans if p.target_key == "u14-hg")
@@ -222,6 +231,7 @@ class TestComputeScrapePlan:
             SAMPLE_CONFIGS,
             today,
             SEASON_END,
+            SEASON_START,
         )
 
         u14 = next(p for p in plan.plans if p.target_key == "u14-hg")
@@ -245,6 +255,7 @@ class TestComputeScrapePlan:
             SAMPLE_CONFIGS,
             date(2026, 3, 12),
             SEASON_END,
+            SEASON_START,
         )
 
         u14 = next(p for p in plan.plans if p.target_key == "u14-hg")
@@ -269,7 +280,93 @@ class TestComputeScrapePlan:
             SAMPLE_CONFIGS,
             date(2026, 3, 12),
             SEASON_END,
+            SEASON_START,
         )
 
         u14 = next(p for p in plan.plans if p.target_key == "u14-hg")
         assert u14.action == ScrapeAction.SKIP
+
+
+class TestSeasonStartClamping:
+    """
+    MLS Next only serves dates from the season start forward (SB-546).
+
+    Asking for anything earlier is not a smaller result — the calendar widget
+    fails with "Failed to navigate to start date month" and the scrape returns
+    nothing, silently.
+    """
+
+    SEASON_START = date(2026, 8, 1)
+    SEASON_END = date(2027, 7, 15)
+
+    def _plan(self, today, mt_targets=None):
+        return compute_scrape_plan(
+            mt_targets=mt_targets if mt_targets is not None else [],
+            target_configs={
+                "u15-hg": {"age_group": "U15", "league": "Homegrown", "division": "Northeast"}
+            },
+            today=today,
+            season_end=self.SEASON_END,
+            season_start=self.SEASON_START,
+        )
+
+    def test_score_sync_window_cannot_predate_the_season(self):
+        """
+        On 2026-08-02 the raw weekend window starts 2026-07-24 — the previous
+        season. This is the case that was still broken after SB-538.
+        """
+        mt = [
+            {
+                "age_group": "U15",
+                "league": "Homegrown",
+                "division": "Northeast",
+                "total": 10,
+                "needs_score": 3,
+                "needs_kickoff": 0,
+            }
+        ]
+        plan = self._plan(date(2026, 8, 2), mt)
+        scrape = plan.plans[0]
+
+        assert scrape.start_date >= self.SEASON_START
+        assert scrape.start_date == self.SEASON_START
+
+    def test_full_sync_start_is_clamped(self):
+        plan = self._plan(date(2026, 7, 20))
+        assert plan.plans[0].start_date >= self.SEASON_START
+
+    def test_no_plan_ever_starts_before_the_season(self):
+        """Sweep the rollover boundary — no window may predate the season."""
+        for day in range(1, 32):
+            for month, year in ((7, 2026), (8, 2026)):
+                try:
+                    today = date(year, month, day)
+                except ValueError:
+                    continue
+                for mt in (
+                    [],
+                    [
+                        {
+                            "age_group": "U15",
+                            "league": "Homegrown",
+                            "division": "Northeast",
+                            "total": 10,
+                            "needs_score": 2,
+                            "needs_kickoff": 0,
+                        }
+                    ],
+                    [
+                        {
+                            "age_group": "U15",
+                            "league": "Homegrown",
+                            "division": "Northeast",
+                            "total": 10,
+                            "needs_score": 0,
+                            "needs_kickoff": 4,
+                        }
+                    ],
+                ):
+                    plan = self._plan(today, mt)
+                    for s in plan.plans:
+                        assert s.start_date >= self.SEASON_START, f"{today} {s.action}"
+                        assert s.end_date >= s.start_date, f"{today} {s.action} inverted"

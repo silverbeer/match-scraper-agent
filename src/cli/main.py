@@ -254,7 +254,7 @@ def run(
             from datetime import UTC, datetime
 
             from agent.planner import compute_scrape_plan, fetch_mt_status
-            from agent.tools import SEASON_END, _current_season
+            from agent.tools import SEASON_END, SEASON_START, _current_season
 
             now_utc = datetime.now(tz=UTC)
             mt_targets, mt_status_str = fetch_mt_status(
@@ -277,6 +277,7 @@ def run(
                 target_configs=_TARGET_SCRAPER_CONFIG,
                 today=now_utc.date(),
                 season_end=SEASON_END,
+                season_start=SEASON_START,
             )
             ctx._scrape_plan = plan
 
