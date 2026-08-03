@@ -51,10 +51,14 @@ class AgentSettings(BaseSettings):
     journal_s3_bucket: str = ""
     journal_s3_key: str = "journal/latest.json"
 
-    # Schedule release watcher — shares the journal bucket. State must be
-    # remote because CronJob pods are ephemeral and local state would make
-    # the watcher re-announce a release on every single run.
+    # Schedule release watcher — shares the journal bucket. State must outlive
+    # the pod because CronJob pods are ephemeral, and state that does not
+    # survive would make the watcher re-announce a release on every single run.
     release_watch_s3_key: str = "release-watch/state.json"
+    # Used when no journal bucket is configured. The cluster has no bucket and
+    # no AWS credentials, so this is the deployed path — it points into the
+    # agent-state PVC, mounted by the release-watch CronJob at /data/agent-state.
+    release_watch_state_path: str = "/data/agent-state/release-watch.json"
     # Consecutive all-targets-failed runs before alerting. One failed run
     # against someone else's server is noise, not news.
     release_watch_failure_threshold: int = 3

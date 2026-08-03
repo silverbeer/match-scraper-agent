@@ -2,18 +2,26 @@
 Cross-run state for the schedule release watcher.
 
 CronJob pods are ephemeral, so "have we already announced this?" cannot live
-on local disk — a fresh pod would re-announce on every run, which is exactly
-the alert spam the watcher exists to avoid. State goes to S3 alongside the run
-journal.
+in the container filesystem — a fresh pod would re-announce on every run,
+which is exactly the alert spam the watcher exists to avoid.
+
+Two backends, chosen by whether an S3 bucket is configured:
+
+* ``AGENT_JOURNAL_S3_BUCKET`` set → S3, alongside the run journal.
+* otherwise → a JSON file at ``AGENT_RELEASE_WATCH_STATE_PATH``, which on the
+  cluster points into the ``agent-state`` PVC. The live cluster has no bucket
+  and no AWS credentials, so this is the deployed path; setting the bucket env
+  var switches back to S3 with no code change.
 
 Mirrors ``utils.journal``: lazy boto3 import, and reads/writes that log and
-carry on rather than raising. A watcher that dies because S3 hiccuped is worse
-than one that sends a duplicate message.
+carry on rather than raising. A watcher that dies because its store hiccuped
+is worse than one that sends a duplicate message.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import structlog
 from pydantic import BaseModel, Field
@@ -74,13 +82,16 @@ class ReleaseWatchState(BaseModel):
         self.last_probe_at = (now or datetime.now(tz=UTC)).isoformat()
 
 
-def read_state(bucket: str, key: str) -> ReleaseWatchState:
+def read_state(bucket: str, key: str, local_path: str = "") -> ReleaseWatchState:
     """
-    Read watch state from S3.
+    Read watch state from S3, or from ``local_path`` when no bucket is set.
 
     Returns a blank state when the object is missing or unreadable — the
     watcher should start announcing again rather than refuse to run.
     """
+    if not bucket:
+        return _read_local(local_path)
+
     import boto3
     from botocore.exceptions import ClientError
 
@@ -98,8 +109,12 @@ def read_state(bucket: str, key: str) -> ReleaseWatchState:
         return ReleaseWatchState()
 
 
-def write_state(bucket: str, key: str, state: ReleaseWatchState) -> None:
-    """Write watch state to S3. Never raises."""
+def write_state(bucket: str, key: str, state: ReleaseWatchState, local_path: str = "") -> None:
+    """Write watch state to S3, or to ``local_path`` when no bucket is set. Never raises."""
+    if not bucket:
+        _write_local(local_path, state)
+        return
+
     import boto3
 
     try:
@@ -113,3 +128,44 @@ def write_state(bucket: str, key: str, state: ReleaseWatchState) -> None:
         logger.info("release_watch.written", bucket=bucket, key=key)
     except Exception as exc:
         logger.warning("release_watch.write_failed", bucket=bucket, key=key, error=str(exc))
+
+
+def _read_local(path: str) -> ReleaseWatchState:
+    """Read watch state from a JSON file, blank if absent or unreadable."""
+    if not path:
+        logger.warning(
+            "release_watch.no_state_store",
+            detail="no S3 bucket and no state path — every run will re-announce",
+        )
+        return ReleaseWatchState()
+
+    try:
+        return ReleaseWatchState.model_validate_json(Path(path).read_text())
+    except FileNotFoundError:
+        logger.debug("release_watch.read_skipped", path=path, reason="not found")
+        return ReleaseWatchState()
+    except Exception as exc:
+        logger.debug("release_watch.read_skipped", path=path, reason=str(exc))
+        return ReleaseWatchState()
+
+
+def _write_local(path: str, state: ReleaseWatchState) -> None:
+    """
+    Write watch state to a JSON file. Never raises.
+
+    Writes to a sibling temp file and renames, so a pod killed mid-write leaves
+    the previous state intact rather than a truncated file that parses as blank
+    and re-announces.
+    """
+    if not path:
+        return
+
+    try:
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(f"{target.name}.tmp")
+        tmp.write_text(state.model_dump_json(indent=2))
+        tmp.replace(target)
+        logger.info("release_watch.written", path=path)
+    except Exception as exc:
+        logger.warning("release_watch.write_failed", path=path, error=str(exc))

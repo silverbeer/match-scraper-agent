@@ -147,6 +147,68 @@ class TestS3State:
 
 
 # ---------------------------------------------------------------------------
+# Local file round trip — the backend actually deployed on the cluster, which
+# has no bucket and no AWS credentials.
+# ---------------------------------------------------------------------------
+
+
+class TestLocalFileState:
+    def test_round_trip(self, tmp_path):
+        path = str(tmp_path / "release-watch.json")
+        write_state("", KEY, ReleaseWatchState(seen_live=["U15 Northeast"]), path)
+
+        restored = read_state("", KEY, path)
+        assert restored.seen_live == ["U15 Northeast"]
+
+    def test_missing_file_yields_blank_state(self, tmp_path):
+        assert read_state("", KEY, str(tmp_path / "absent.json")).seen_live == []
+
+    def test_unreadable_state_yields_blank_rather_than_raising(self, tmp_path):
+        path = tmp_path / "release-watch.json"
+        path.write_text("not json")
+        assert read_state("", KEY, str(path)).seen_live == []
+
+    def test_parent_directory_is_created(self, tmp_path):
+        path = str(tmp_path / "nested" / "dir" / "release-watch.json")
+        write_state("", KEY, ReleaseWatchState(seen_live=["U15 Florida"]), path)
+        assert read_state("", KEY, path).seen_live == ["U15 Florida"]
+
+    def test_write_failure_never_raises(self, tmp_path):
+        """A directory where the file should be — write fails, watcher lives."""
+        path = tmp_path / "release-watch.json"
+        path.mkdir()
+        write_state("", KEY, ReleaseWatchState(), str(path))  # must not raise
+
+    def test_a_failed_write_leaves_the_previous_state_intact(self, tmp_path):
+        """Truncated state parses as blank, which would re-announce."""
+        path = tmp_path / "release-watch.json"
+        write_state("", KEY, ReleaseWatchState(seen_live=["U15 Northeast"]), str(path))
+
+        with patch("pathlib.Path.replace", side_effect=OSError("disk full")):
+            write_state("", KEY, ReleaseWatchState(seen_live=["U15 Florida"]), str(path))
+
+        assert read_state("", KEY, str(path)).seen_live == ["U15 Northeast"]
+
+    def test_no_bucket_and_no_path_is_blank_not_a_crash(self):
+        assert read_state("", KEY, "").seen_live == []
+        write_state("", KEY, ReleaseWatchState(), "")  # must not raise
+
+    def test_a_configured_bucket_still_wins(self, tmp_path):
+        """One env var flips back to S3 — the local path is not consulted."""
+        path = tmp_path / "release-watch.json"
+        path.write_text(ReleaseWatchState(seen_live=["stale local"]).model_dump_json())
+
+        s3 = MagicMock()
+        s3.get_object.return_value = {
+            "Body": MagicMock(
+                read=lambda: ReleaseWatchState(seen_live=["from s3"]).model_dump_json()
+            )
+        }
+        with patch("boto3.client", return_value=s3):
+            assert read_state(BUCKET, KEY, str(path)).seen_live == ["from s3"]
+
+
+# ---------------------------------------------------------------------------
 # The command
 # ---------------------------------------------------------------------------
 
@@ -174,7 +236,7 @@ def _run(probe, state, sent_bucket="bucket", extra_args=()):
         patch("utils.release_watch.read_state", return_value=state),
         patch(
             "utils.release_watch.write_state",
-            side_effect=lambda b, k, s: saved.update({"state": s}),
+            side_effect=lambda b, k, s, p="": saved.update({"state": s, "bucket": b, "path": p}),
         ),
         # AgentSettings reads AGENT_-prefixed env vars; the field itself is a
         # pydantic-settings descriptor and cannot be patched as an attribute.
@@ -265,6 +327,52 @@ class TestWatchReleaseCommand:
 
         assert result.exit_code == 20
         assert sent == [], "already alerted for this streak"
+
+    def test_state_survives_between_runs_on_the_local_backend(self, sent, tmp_path):
+        """
+        The deployed shape: no bucket, state on the PVC. Two runs against the
+        same published probe must announce exactly once — this is the whole
+        reason the CronJob mounts a volume.
+        """
+        probe_patch = patch(
+            "src.scraper.release_detector.ScheduleReleaseDetector.probe",
+            new=MagicMock(
+                side_effect=lambda: _async(_probe([_result(state=ReleaseState.LIVE, count=25)]))
+            ),
+        )
+        env = {
+            "AGENT_JOURNAL_S3_BUCKET": "",
+            "AGENT_RELEASE_WATCH_STATE_PATH": str(tmp_path / "release-watch.json"),
+        }
+
+        with probe_patch, patch.dict("os.environ", env):
+            first = runner.invoke(app, ["watch-release"])
+            second = runner.invoke(app, ["watch-release"])
+
+        assert first.exit_code == 10
+        assert second.exit_code == 0, "a remembered release is not news"
+        assert len(sent) == 1
+
+    def test_dry_run_writes_no_state(self, sent, tmp_path):
+        """Otherwise a dry run would silence the real announcement."""
+        state_file = tmp_path / "release-watch.json"
+        probe_patch = patch(
+            "src.scraper.release_detector.ScheduleReleaseDetector.probe",
+            new=MagicMock(
+                return_value=_async(_probe([_result(state=ReleaseState.LIVE, count=25)]))
+            ),
+        )
+        env = {
+            "AGENT_JOURNAL_S3_BUCKET": "",
+            "AGENT_RELEASE_WATCH_STATE_PATH": str(state_file),
+        }
+
+        with probe_patch, patch.dict("os.environ", env):
+            result = runner.invoke(app, ["watch-release", "--dry-run"])
+
+        assert result.exit_code == 10
+        assert sent == []
+        assert not state_file.exists()
 
     def test_recovery_clears_the_failure_streak(self, sent):
         probe = _probe([_result()])
