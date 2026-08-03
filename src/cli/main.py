@@ -936,15 +936,15 @@ def watch_release(
 
     probe = asyncio.run(detector.probe())
 
+    # S3 when a bucket is configured, otherwise a file on the mounted PVC.
+    # Either way the state must survive the pod, or every run re-announces.
     bucket = settings.journal_s3_bucket
-    if bucket and not dry_run:
-        state = read_state(bucket, settings.release_watch_s3_key)
+    state_path = settings.release_watch_state_path
+    persist = bool(bucket or state_path) and not dry_run
+
+    if persist:
+        state = read_state(bucket, settings.release_watch_s3_key, state_path)
     else:
-        if not bucket:
-            logger.warning(
-                "release_watch.no_bucket",
-                detail="AGENT_JOURNAL_S3_BUCKET unset — every run will re-announce",
-            )
         from utils.release_watch import ReleaseWatchState
 
         state = ReleaseWatchState()
@@ -1000,8 +1000,8 @@ def watch_release(
 
     state.touch()
 
-    if bucket and not dry_run:
-        write_state(bucket, settings.release_watch_s3_key, state)
+    if persist:
+        write_state(bucket, settings.release_watch_s3_key, state, state_path)
 
     if probe.all_failed:
         raise typer.Exit(code=20)

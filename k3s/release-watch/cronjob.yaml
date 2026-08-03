@@ -49,6 +49,14 @@ spec:
                     name: match-scraper-agent-config
                 - secretRef:
                     name: match-scraper-agent-secret
+              volumeMounts:
+                # "Have we already announced this?" has to outlive the pod, or
+                # the watcher re-announces every 30 minutes. The cluster has no
+                # S3 bucket and no AWS credentials in the Secret, so state goes
+                # to the same PVC the agent CronJob already uses. Setting
+                # AGENT_JOURNAL_S3_BUCKET switches it back to S3.
+                - name: agent-state
+                  mountPath: /data/agent-state
               resources:
                 # No browser — plain HTTP, so this is far lighter than the
                 # scraper CronJobs.
@@ -58,3 +66,10 @@ spec:
                 limits:
                   cpu: "250m"
                   memory: 512Mi
+          volumes:
+            # RWO, and the agent CronJob mounts it too — but the agent runs at
+            # 02/08/14/20 for a few minutes and both land on the same node, so
+            # they do not contend in practice.
+            - name: agent-state
+              persistentVolumeClaim:
+                claimName: agent-state
