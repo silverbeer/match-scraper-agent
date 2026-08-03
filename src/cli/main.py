@@ -229,7 +229,7 @@ def run(
             from datetime import date
 
             from agent.planner import RunPlan, ScrapeAction, ScrapePlan
-            from agent.tools import SEASON_END
+            from agent.tools import current_segment_window
 
             target_cfg = _TARGET_SCRAPER_CONFIG[target]
             label = _target_label(target_cfg)
@@ -240,7 +240,7 @@ def run(
                         target_label=label,
                         action=ScrapeAction.FULL_SYNC,
                         start_date=date.today(),
-                        end_date=SEASON_END,
+                        end_date=current_segment_window()[1],
                         reason="Targeted run",
                         scraper_params=target_cfg,
                     )
@@ -254,7 +254,7 @@ def run(
             from datetime import UTC, datetime
 
             from agent.planner import compute_scrape_plan, fetch_mt_status
-            from agent.tools import SEASON_END, SEASON_START, _current_season
+            from agent.tools import SEASON_START, _current_season, current_segment_window
 
             now_utc = datetime.now(tz=UTC)
             mt_targets, mt_status_str = fetch_mt_status(
@@ -272,11 +272,16 @@ def run(
                 )
                 raise typer.Exit(code=1)
 
+            # Scrape the current segment, not the whole remaining season: a
+            # range ending in the season's final month cannot be expressed in
+            # the MLS Next date picker and fails every full_sync (SB-551).
+            _, segment_end = current_segment_window(now_utc.date())
+
             plan = compute_scrape_plan(
                 mt_targets=mt_targets,
                 target_configs=_TARGET_SCRAPER_CONFIG,
                 today=now_utc.date(),
-                season_end=SEASON_END,
+                season_end=segment_end,
                 season_start=SEASON_START,
             )
             ctx._scrape_plan = plan
@@ -423,9 +428,10 @@ def scrape(
     from src.scraper.mls_scraper import MLSScraper
 
     from agent.tools import (
-        SEASON_END,
         _current_season,
         _normalize_team_name,
+        clamp_scrape_range,
+        current_segment_window,
     )
     from config.settings import AgentSettings, env_file_path
     from utils.logger import configure_logging
@@ -443,10 +449,20 @@ def scrape(
 
     try:
         start = date.fromisoformat(from_date) if from_date else date.today()
-        end = date.fromisoformat(to_date) if to_date else SEASON_END
+        end = date.fromisoformat(to_date) if to_date else current_segment_window()[1]
     except ValueError as exc:
         typer.echo(f"Invalid date format: {exc}. Use YYYY-MM-DD.", err=True)
         raise typer.Exit(code=1) from None
+
+    # This path builds ScrapingConfig directly rather than going through
+    # tools.scrape_matches, so it needs its own clamp.
+    requested = (start, end)
+    start, end = clamp_scrape_range(start, end)
+    if (start, end) != requested:
+        typer.echo(
+            f"Adjusted date range {requested[0]}..{requested[1]} -> {start}..{end} "
+            "(MLS Next only serves the current season, and not its final month)."
+        )
 
     config = ScrapingConfig(
         age_group=target_cfg.get("age_group", settings.age_group),

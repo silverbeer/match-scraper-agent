@@ -11,7 +11,7 @@ import structlog
 from agent.deps import RunContext
 from agent.planner import RunPlan, ScrapeAction, ScrapePlan
 from agent.result import AgentAction, AgentResult
-from agent.tools import SEASON_END, scrape_matches, submit_matches
+from agent.tools import current_segment_window, scrape_matches, submit_matches
 from utils.journal import RunJournal, TargetEntry
 
 logger = structlog.get_logger()
@@ -42,7 +42,9 @@ def error_retry(sp: ScrapePlan, entry: TargetEntry | None) -> ScrapePlan:
                 "action": ScrapeAction.FULL_SYNC,
                 "reason": f"Retrying after {entry.errors} error(s) last run",
                 "start_date": date.today(),
-                "end_date": SEASON_END,
+                # Segment, not season — a range ending in the season's final
+                # month cannot be set in the date picker (SB-551).
+                "end_date": current_segment_window()[1],
             }
         )
     return sp

@@ -80,15 +80,23 @@ async def run_one_team_audit(
 
     # Step 2: Build ScrapingConfig — map MT canonical name back to MLS Next display name
     mls_club_name = MT_NAME_TO_MLS_NAME.get(team, team)
+
+    # This path builds ScrapingConfig directly, so it needs its own clamp:
+    # MLS Next serves only the current season and cannot express a range
+    # ending in the season's final month (SB-551).
+    from agent.tools import clamp_scrape_range
+
+    scrape_start, scrape_end = clamp_scrape_range(season_start, season_end)
+
     config = ScrapingConfig(
         age_group=age_group,
         league=league,
         division=division,
         conference="",
         club=mls_club_name,
-        start_date=season_start,
-        end_date=season_end,
-        look_back_days=(season_end - season_start).days,
+        start_date=scrape_start,
+        end_date=scrape_end,
+        look_back_days=(scrape_end - scrape_start).days,
         missing_table_api_url=settings.missing_table_api_url,
         missing_table_api_key=settings.missing_table_api_key or "unused",
     )
