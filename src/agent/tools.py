@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+from datetime import date, timedelta
 
 import structlog
-from src.scraper.modular11 import current_season_year, season_label, season_window
+from src.scraper.modular11 import (
+    current_season_year,
+    fall_segment_window,
+    season_label,
+    season_window,
+)
 
 from agent.deps import RunContext
 
@@ -48,6 +53,49 @@ SEASON_END = season_window(current_season_year())[1]
 # earlier is not a smaller result, it is a broken scrape.
 SEASON_START = season_window(current_season_year())[0]
 
+# The latest date a scrape may end on.
+#
+# The MLS Next date picker shows two month panels side by side, and the
+# season's final month (July 2027) is the last one it will render — there is
+# no August 2027 to pair it with, so July can only ever be the *right* panel.
+# Our calendar code navigates the start month into the *left* panel, so any
+# range ending in that final month fails with "Failed to navigate to start
+# date month". Measured 2026-08-03: a range ending 15 Jun 2027 works, one
+# ending 15 Jul 2027 fails, and even a two-week range inside July 2027 fails.
+#
+# So we stop at the end of the month *before* the season's final month.
+#
+# This costs no data: matches run September-November in the fall segment and
+# March-June in the spring, so nothing is ever scheduled in the season's first
+# or last month.
+SCRAPE_END_CAP = SEASON_END.replace(day=1) - timedelta(days=1)
+
+
+def current_segment_window(today: date | None = None) -> tuple[date, date]:
+    """
+    Return the window for the segment ``today`` falls in.
+
+    The season splits in two, and scraping a segment at a time keeps the
+    request inside what the date picker can express:
+
+    * Fall:   1 August  - 31 December
+    * Spring: 1 January - 1 July
+
+    The returned end is capped at :data:`SCRAPE_END_CAP`, so the spring
+    segment stops short of the season's unreachable final month rather than
+    reproducing the full_sync failure every January.
+    """
+    today = today or date.today()
+    season_year = current_season_year(today)
+    fall_start, fall_end = fall_segment_window(season_year)
+
+    if today <= fall_end:
+        return fall_start, min(fall_end, SCRAPE_END_CAP)
+
+    spring_start = date(season_year + 1, 1, 1)
+    spring_end = date(season_year + 1, 7, 1)
+    return spring_start, min(spring_end, SCRAPE_END_CAP)
+
 
 def clamp_scrape_range(start: date, end: date) -> tuple[date, date]:
     """
@@ -58,6 +106,9 @@ def clamp_scrape_range(start: date, end: date) -> tuple[date, date]:
     * ``start`` is raised to the season start. The weekend-scores window looks
       back to the Friday before last weekend, which in early August points at
       the previous season — a range the site rejects outright.
+    * ``end`` is lowered to :data:`SCRAPE_END_CAP`, keeping the range clear of
+      the season's final month, which the date picker cannot use as the left
+      panel.
     * ``end`` is never allowed before ``start``. The season window closes on
       15 July while the season year rolls over on 1 August, leaving the second
       half of July a dead zone where an unguarded ``end`` sits in the past.
@@ -67,7 +118,7 @@ def clamp_scrape_range(start: date, end: date) -> tuple[date, date]:
     Returns the corrected ``(start, end)``.
     """
     clamped_start = max(start, SEASON_START)
-    clamped_end = max(end, clamped_start)
+    clamped_end = max(min(end, SCRAPE_END_CAP), clamped_start)
     return clamped_start, clamped_end
 
 

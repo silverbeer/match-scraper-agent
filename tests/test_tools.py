@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from agent.deps import RunContext
@@ -232,3 +232,77 @@ class TestClampScrapeRange:
         from agent.tools import SEASON_END, SEASON_START
 
         assert SEASON_START < SEASON_END
+
+
+class TestCurrentSegmentWindow:
+    """
+    Scrape one segment at a time (SB-551).
+
+    A range ending in the season's final month cannot be set in the MLS Next
+    date picker: July 2027 is the last month it renders, so it can only ever
+    be the right-hand panel, and the start month is navigated into the left.
+    Measured 2026-08-03 — a range ending 15 Jun 2027 works, one ending 15 Jul
+    2027 fails, and so does a two-week range wholly inside July 2027.
+    """
+
+    def test_august_is_in_the_fall_segment(self):
+        from agent.tools import current_segment_window
+
+        start, end = current_segment_window(date(2026, 8, 3))
+
+        assert start == date(2026, 8, 1)
+        assert end == date(2026, 12, 31)
+
+    def test_november_is_still_the_fall_segment(self):
+        from agent.tools import current_segment_window
+
+        start, end = current_segment_window(date(2026, 11, 20))
+
+        assert start == date(2026, 8, 1)
+        assert end == date(2026, 12, 31)
+
+    def test_january_switches_to_the_spring_segment(self):
+        from agent.tools import current_segment_window
+
+        start, end = current_segment_window(date(2027, 1, 15))
+
+        assert start == date(2027, 1, 1)
+        assert end > start
+
+    def test_spring_segment_stops_short_of_the_unreachable_month(self):
+        """
+        The spring segment nominally runs to 1 July, but July is the season's
+        final month and unusable, so the scrape window must stop before it.
+        """
+        from agent.tools import SEASON_END, current_segment_window
+
+        _, end = current_segment_window(date(2027, 3, 1))
+
+        assert end < date(2027, 7, 1)
+        assert end.month != SEASON_END.month
+
+    def test_no_segment_window_ever_reaches_the_final_month(self):
+        from agent.tools import SEASON_END, current_segment_window
+
+        for month in range(1, 13):
+            year = 2026 if month >= 8 else 2027
+            _, end = current_segment_window(date(year, month, 15))
+            assert not (end.year == SEASON_END.year and end.month == SEASON_END.month)
+
+    def test_segment_windows_are_never_inverted(self):
+        from agent.tools import current_segment_window
+
+        for month in range(1, 13):
+            year = 2026 if month >= 8 else 2027
+            start, end = current_segment_window(date(year, month, 15))
+            assert end >= start, f"{year}-{month}"
+
+    def test_clamp_lowers_an_end_in_the_final_month(self):
+        """The production range 2026-08-03 -> 2027-07-15 that failed."""
+        from agent.tools import SEASON_END, clamp_scrape_range
+
+        start, end = clamp_scrape_range(date(2026, 8, 3), date(2027, 7, 15))
+
+        assert end < SEASON_END
+        assert end.month != SEASON_END.month
+        assert end >= start
