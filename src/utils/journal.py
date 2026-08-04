@@ -1,8 +1,23 @@
-"""Run journal — lightweight cross-run memory for the agent."""
+"""
+Run journal — lightweight cross-run memory for the agent.
+
+Two backends, chosen by whether an S3 bucket is configured:
+
+* ``AGENT_JOURNAL_S3_BUCKET`` set → S3.
+* otherwise → a JSON file at ``AGENT_JOURNAL_PATH``, which on the cluster
+  points into the ``agent-state`` PVC the CronJob already mounts. The live
+  cluster has no bucket and no AWS credentials, so this is the deployed path;
+  setting the bucket env var switches back to S3 with no code change.
+
+Same arrangement as ``utils.release_watch``. Reads and writes log and carry on
+rather than raising: a run that dies because its journal store hiccuped is
+worse than one that plans without memory of the last run.
+"""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -38,8 +53,14 @@ class RunJournal(BaseModel):
     missing_score_matches: list[str] = []
 
 
-def read_journal(bucket: str, key: str) -> RunJournal | None:
-    """Read the last run journal from S3. Returns None if missing or invalid."""
+def read_journal(bucket: str, key: str, local_path: str = "") -> RunJournal | None:
+    """
+    Read the last run journal from S3, or from ``local_path`` when no bucket
+    is set. Returns None if missing or invalid.
+    """
+    if not bucket:
+        return _read_local(local_path)
+
     import boto3
     from botocore.exceptions import ClientError
 
@@ -58,8 +79,15 @@ def read_journal(bucket: str, key: str) -> RunJournal | None:
         return None
 
 
-def write_journal(bucket: str, key: str, journal: RunJournal) -> None:
-    """Write the run journal to S3. Never raises."""
+def write_journal(bucket: str, key: str, journal: RunJournal, local_path: str = "") -> None:
+    """
+    Write the run journal to S3, or to ``local_path`` when no bucket is set.
+    Never raises.
+    """
+    if not bucket:
+        _write_local(local_path, journal)
+        return
+
     import boto3
 
     try:
@@ -73,6 +101,47 @@ def write_journal(bucket: str, key: str, journal: RunJournal) -> None:
         logger.info("journal.written", bucket=bucket, key=key)
     except Exception as exc:
         logger.warning("journal.write_failed", bucket=bucket, key=key, error=str(exc))
+
+
+def _read_local(path: str) -> RunJournal | None:
+    """Read the journal from a JSON file. None if absent or unreadable."""
+    if not path:
+        logger.warning(
+            "journal.no_store",
+            detail="no S3 bucket and no journal path — this run has no memory of the last",
+        )
+        return None
+
+    try:
+        return RunJournal.model_validate_json(Path(path).read_text())
+    except FileNotFoundError:
+        logger.debug("journal.read_skipped", path=path, reason="not found")
+        return None
+    except Exception as exc:
+        logger.debug("journal.read_skipped", path=path, reason=str(exc))
+        return None
+
+
+def _write_local(path: str, journal: RunJournal) -> None:
+    """
+    Write the journal to a JSON file. Never raises.
+
+    Writes to a sibling temp file and renames, so a pod killed mid-write leaves
+    the previous journal intact rather than a truncated file that reads as no
+    memory at all.
+    """
+    if not path:
+        return
+
+    try:
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(f"{target.name}.tmp")
+        tmp.write_text(journal.model_dump_json(indent=2))
+        tmp.replace(target)
+        logger.info("journal.written", path=path)
+    except Exception as exc:
+        logger.warning("journal.write_failed", path=path, error=str(exc))
 
 
 def build_journal(

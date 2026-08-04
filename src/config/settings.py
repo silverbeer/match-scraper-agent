@@ -47,9 +47,13 @@ class AgentSettings(BaseSettings):
     json_logs: bool = False
     log_level: str = "info"
 
-    # Run journal (cross-run memory) — stored in S3
+    # Run journal (cross-run memory) — S3 when a bucket is set, otherwise a
+    # file. The cluster has no bucket and no AWS credentials, so the path is
+    # the deployed backend; it points into the agent-state PVC that the agent
+    # CronJob already mounts at /data/agent-state.
     journal_s3_bucket: str = ""
     journal_s3_key: str = "journal/latest.json"
+    journal_path: str = "/data/agent-state/journal.json"
 
     # Schedule release watcher — shares the journal bucket. State must outlive
     # the pod because CronJob pods are ephemeral, and state that does not

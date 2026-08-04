@@ -166,6 +166,66 @@ class TestWriteJournal:
             write_journal(BUCKET, KEY, journal)  # must not raise
 
 
+class TestLocalFileJournal:
+    """The backend deployed on the cluster, which has no bucket and no AWS credentials."""
+
+    def test_round_trip(self, tmp_path) -> None:
+        path = str(tmp_path / "journal.json")
+        write_journal(
+            "", KEY, RunJournal(timestamp="2026-03-09T14:00:00+00:00", run_id="xyz"), path
+        )
+
+        restored = read_journal("", KEY, path)
+        assert restored is not None
+        assert restored.run_id == "xyz"
+
+    def test_missing_file_returns_none(self, tmp_path) -> None:
+        assert read_journal("", KEY, str(tmp_path / "absent.json")) is None
+
+    def test_invalid_json_returns_none(self, tmp_path) -> None:
+        path = tmp_path / "journal.json"
+        path.write_text("not json at all")
+        assert read_journal("", KEY, str(path)) is None
+
+    def test_parent_directory_is_created(self, tmp_path) -> None:
+        path = str(tmp_path / "nested" / "dir" / "journal.json")
+        write_journal(
+            "", KEY, RunJournal(timestamp="2026-03-09T14:00:00+00:00", run_id="deep"), path
+        )
+        assert read_journal("", KEY, path).run_id == "deep"
+
+    def test_write_failure_does_not_raise(self, tmp_path) -> None:
+        path = tmp_path / "journal.json"
+        path.mkdir()  # a directory where the file should be
+        write_journal("", KEY, RunJournal(timestamp="t", run_id="x"), str(path))  # must not raise
+
+    def test_failed_write_leaves_the_previous_journal_intact(self, tmp_path) -> None:
+        """A truncated journal reads as no memory, which disables the modifier rules."""
+        path = tmp_path / "journal.json"
+        write_journal("", KEY, RunJournal(timestamp="t", run_id="first"), str(path))
+
+        with patch("pathlib.Path.replace", side_effect=OSError("disk full")):
+            write_journal("", KEY, RunJournal(timestamp="t", run_id="second"), str(path))
+
+        assert read_journal("", KEY, str(path)).run_id == "first"
+
+    def test_no_bucket_and_no_path_returns_none(self) -> None:
+        assert read_journal("", KEY, "") is None
+        write_journal("", KEY, RunJournal(timestamp="t", run_id="x"), "")  # must not raise
+
+    def test_a_configured_bucket_still_wins(self, tmp_path) -> None:
+        """One env var flips back to S3 — the local path is not consulted."""
+        path = tmp_path / "journal.json"
+        path.write_text(RunJournal(timestamp="t", run_id="stale-local").model_dump_json())
+
+        mock_s3 = MagicMock()
+        mock_s3.get_object.return_value = {
+            "Body": _s3_body(RunJournal(timestamp="t", run_id="from-s3"))
+        }
+        with patch("boto3.client", return_value=mock_s3):
+            assert read_journal(BUCKET, KEY, str(path)).run_id == "from-s3"
+
+
 class TestBuildJournal:
     def test_basic(self) -> None:
         now = datetime(2026, 3, 9, 14, 0, tzinfo=UTC)  # Monday
