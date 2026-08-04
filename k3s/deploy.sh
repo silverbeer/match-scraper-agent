@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
 # Deploy match-scraper-agent stack to K3s.
 #
+# ⚠️  DO NOT RUN THIS AGAINST rancher-desktop — it is production for the
+# scraper pipeline, and this script deploys more than the agent:
+#
+#   * rabbitmq/{pvc,deployment,service}.yaml stands up a SECOND broker. The
+#     Celery workers consume from messaging-rabbitmq (the messaging-platform
+#     Helm release), not from this one.
+#   * qop-rankings/cronjob.yaml is deliberately not deployed — see SB-544.
+#
+# The ConfigMap itself is safe to apply as of SB-558: its RabbitMQ hostname
+# now matches the live broker, and the dead LLM-era keys are gone. Apply
+# individual manifests:
+#
+#   kubectl apply -f k3s/match-scraper-agent/configmap.yaml
+#   kubectl apply -f k3s/match-scraper-agent/cronjob.yaml
+#   kubectl apply -f k3s/release-watch/cronjob.yaml
+#
 # Applies: namespace → RabbitMQ (pvc, deployment, service) →
 #          match-scraper-agent (configmap, secret, cronjob) →
 #          qop-rankings (cronjob) → release-watch (cronjob)
@@ -8,9 +24,9 @@
 # Reads envs/.env.prod for secrets and generates the K8s Secret manifest.
 #
 # Required vars in envs/.env.prod:
-#   AGENT_ANTHROPIC_API_KEY       — API key (or "agent-via-proxy" when using proxy)
 #   AGENT_MISSING_TABLE_API_KEY   — missing-table API key
-#   AGENT_TELEGRAM_BOT_TOKEN     — Telegram bot token for notifications
+#   AGENT_TELEGRAM_BOT_TOKEN      — Telegram bot token for notifications
+#   AGENT_TELEGRAM_CHAT_ID        — Telegram chat to notify
 
 set -euo pipefail
 
@@ -23,8 +39,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
   echo "Error: $ENV_FILE not found"
   echo ""
   echo "Create it with at least:"
-  echo "  AGENT_ANTHROPIC_API_KEY=..."
   echo "  AGENT_MISSING_TABLE_API_KEY=..."
+  echo "  AGENT_TELEGRAM_BOT_TOKEN=..."
   exit 1
 fi
 
@@ -35,8 +51,8 @@ set +a
 
 # --- Validate required vars ---
 missing=()
-[[ -z "${AGENT_ANTHROPIC_API_KEY:-}" ]]     && missing+=("AGENT_ANTHROPIC_API_KEY")
 [[ -z "${AGENT_MISSING_TABLE_API_KEY+x}" ]] && missing+=("AGENT_MISSING_TABLE_API_KEY")
+[[ -z "${AGENT_TELEGRAM_BOT_TOKEN:-}" ]]    && missing+=("AGENT_TELEGRAM_BOT_TOKEN")
 
 if [[ ${#missing[@]} -gt 0 ]]; then
   echo "Error: missing required vars in $ENV_FILE:"
@@ -55,9 +71,9 @@ metadata:
   namespace: match-scraper
 type: Opaque
 stringData:
-  AGENT_ANTHROPIC_API_KEY: "$AGENT_ANTHROPIC_API_KEY"
   AGENT_MISSING_TABLE_API_KEY: "$AGENT_MISSING_TABLE_API_KEY"
   AGENT_TELEGRAM_BOT_TOKEN: "$AGENT_TELEGRAM_BOT_TOKEN"
+  AGENT_TELEGRAM_CHAT_ID: "${AGENT_TELEGRAM_CHAT_ID:-}"
 EOF
 
 echo "Generated $SECRET_FILE"

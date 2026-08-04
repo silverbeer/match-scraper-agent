@@ -4,19 +4,22 @@ metadata:
   name: match-scraper-agent-config
   namespace: match-scraper
 data:
-  AGENT_RABBITMQ_URL: "amqp://admin:admin123@rabbitmq.match-scraper.svc.cluster.local:5672//"
+  # messaging-rabbitmq, not rabbitmq — the broker the Celery workers actually
+  # consume from. Pointing at the wrong host publishes matches into a void,
+  # and this line disagreeing with the cluster is the whole reason deploy.sh
+  # carried a "do not run" warning.
+  AGENT_RABBITMQ_URL: "amqp://admin:admin123@messaging-rabbitmq.match-scraper.svc.cluster.local:5672//"
   AGENT_QUEUE_NAME: "matches.prod"
   AGENT_LEAGUE: "Homegrown"
   AGENT_AGE_GROUP: "U14"
   AGENT_DIVISION: "Northeast"
   AGENT_MISSING_TABLE_API_URL: "https://api.missingtable.com"
   MISSING_TABLE_API_BASE_URL: "https://api.missingtable.com"
-  AGENT_JOURNAL_S3_BUCKET: "missingtable-match-scraper"
-  AGENT_JOURNAL_S3_KEY: "journal/latest.json"
-  # Schedule release watcher — shares the journal bucket. Without remote
-  # state the watcher would re-announce a release on every CronJob run.
-  AGENT_RELEASE_WATCH_S3_KEY: "release-watch/state.json"
+  # Cross-run state (run journal + release watcher) lives on the agent-state
+  # PVC. Both stores fall back to S3 if AGENT_JOURNAL_S3_BUCKET is set, but
+  # the cluster has no AWS credentials, so the file paths are the live ones.
+  AGENT_JOURNAL_PATH: "/data/agent-state/journal.json"
+  AGENT_RELEASE_WATCH_STATE_PATH: "/data/agent-state/release-watch.json"
   AGENT_DRY_RUN: "false"
   AGENT_JSON_LOGS: "true"
   AGENT_AUDIT_SEASON_START: "2026-02-01"
-  AGENT_TELEGRAM_CHAT_ID: "-5109858197"
