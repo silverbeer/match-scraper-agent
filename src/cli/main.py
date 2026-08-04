@@ -294,12 +294,18 @@ def run(
                 skip=sum(1 for p in plan.plans if p.action.value == "skip"),
             )
 
-            # Read previous journal for modifier rules
+            # Read previous journal for modifier rules. S3 when a bucket is
+            # configured, otherwise a file on the mounted PVC — with neither,
+            # the modifier rules are dead and a failed target never retries.
             journal = None
-            if settings.journal_s3_bucket:
+            if settings.journal_s3_bucket or settings.journal_path:
                 from utils.journal import read_journal
 
-                journal = read_journal(settings.journal_s3_bucket, settings.journal_s3_key)
+                journal = read_journal(
+                    settings.journal_s3_bucket,
+                    settings.journal_s3_key,
+                    settings.journal_path,
+                )
                 if journal:
                     logger.info("journal.loaded", run_id=journal.run_id)
 
@@ -330,8 +336,10 @@ def run(
             prefix = "[DRY RUN] " if action.dry_run else ""
             typer.echo(f"  {prefix}{action.action}: {action.detail}")
 
-    # Write run journal for next run's context
-    if settings.journal_s3_bucket:
+    # Write run journal for next run's context. A dry run does not write: its
+    # journal would claim work it never did, and the next real run would skip
+    # targets on the strength of it.
+    if (settings.journal_s3_bucket or settings.journal_path) and not settings.dry_run:
         from utils.journal import build_journal, write_journal
 
         journal_out = build_journal(
@@ -342,7 +350,12 @@ def run(
             target=target,
             dry_run=settings.dry_run,
         )
-        write_journal(settings.journal_s3_bucket, settings.journal_s3_key, journal_out)
+        write_journal(
+            settings.journal_s3_bucket,
+            settings.journal_s3_key,
+            journal_out,
+            settings.journal_path,
+        )
 
     # Send Telegram summary report
     _send_telegram_report(
