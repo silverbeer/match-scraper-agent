@@ -73,7 +73,11 @@ class AgentSettings(BaseSettings):
 
     # Resend email fallback (used when Telegram fails)
     resend_api_key: str = ""
-    alert_email_from: str = "contact@missingtable.com"
+    # contact.missingtable.com, not the apex: Resend verifies an exact
+    # domain, and only the subdomain is verified. Sending from
+    # contact@missingtable.com was refused every time, so no alert email has
+    # ever arrived (SB-1127).
+    alert_email_from: str = "alerts@contact.missingtable.com"
     alert_email_to: str = "silverbeer.io@gmail.com"
 
     # Audit settings
